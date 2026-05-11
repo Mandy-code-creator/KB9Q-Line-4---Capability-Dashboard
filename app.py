@@ -187,6 +187,9 @@ if uploaded_file:
                     ax_i.legend(loc="upper left", bbox_to_anchor=(1, 1))
                     apply_full_border(ax_i); plt.tight_layout(); st.pyplot(fig_imr)
 
+        # ==========================================
+        # VIEW 3: EXECUTIVE SUMMARY (ALL PROPERTIES)
+        # ==========================================
         elif view_mode == "Executive Summary":
             st.title("📑 Executive Quality Summary")
             summary_data = []
@@ -206,30 +209,45 @@ if uploaded_file:
                     i_usl = get_limit(df, zh_key, "max", "管制")
                     
                     cp, ca, cpk, status = "-", "-", "-", "N/A"
+                    cpk_val = None
                     
-                    if sig_v > 0 and i_usl is not None and i_lsl is not None:
-                        cp_val = (i_usl - i_lsl) / (6 * sig_v)
-                        cp = format_num(cp_val)
+                    if sig_v > 0:
+                        # TRƯỜNG HỢP CÓ ĐỦ 2 GIỚI HẠN
+                        if i_usl is not None and i_lsl is not None:
+                            cp_val = (i_usl - i_lsl) / (6 * sig_v)
+                            cp = format_num(cp_val)
+                            
+                            center_spec = (i_usl + i_lsl) / 2
+                            half_range = (i_usl - i_lsl) / 2
+                            ca_val = (mu_v - center_spec) / half_range
+                            ca = f"{ca_val*100:.1f}%"
+                            
+                            cpu = (i_usl - mu_v) / (3 * sig_v)
+                            cpl = (mu_v - i_lsl) / (3 * sig_v)
+                            cpk_val = min(cpu, cpl)
                         
-                        center_spec = (i_usl + i_lsl) / 2
-                        half_range = (i_usl - i_lsl) / 2
-                        ca_val = (mu_v - center_spec) / half_range
-                        ca = f"{ca_val*100:.1f}%"
+                        # TRƯỜNG HỢP CHỈ CÓ USL
+                        elif i_usl is not None:
+                            cpu = (i_usl - mu_v) / (3 * sig_v)
+                            cpk_val = cpu
                         
-                        cpu = (i_usl - mu_v) / (3 * sig_v)
-                        cpl = (mu_v - i_lsl) / (3 * sig_v)
-                        cpk_val = min(cpu, cpl)
-                        cpk = format_num(cpk_val)
-                        
-                        status = "🟢 Excellent" if cpk_val >= 1.33 else ("🟡 Acceptable" if cpk_val >= 1.0 else "🔴 Action Required")
+                        # TRƯỜNG HỢP CHỈ CÓ LSL
+                        elif i_lsl is not None:
+                            cpl = (mu_v - i_lsl) / (3 * sig_v)
+                            cpk_val = cpl
+                            
+                        # ĐÁNH GIÁ TRẠNG THÁI NẾU CÓ CPK
+                        if cpk_val is not None:
+                            cpk = format_num(cpk_val)
+                            status = "🟢 Excellent" if cpk_val >= 1.33 else ("🟡 Acceptable" if cpk_val >= 1.0 else "🔴 Action Required")
                     
                     summary_data.append({
                         "Parameter": label,
                         "N": len(p_data),
                         "Mean": format_num(mu_v),
                         "StdDev (σ)": format_num(sig_v),
-                        "Int LSL": format_num(i_lsl), # ĐÃ BỔ SUNG
-                        "Int USL": format_num(i_usl), # ĐÃ BỔ SUNG
+                        "Int LSL": format_num(i_lsl),
+                        "Int USL": format_num(i_usl),
                         "Cp": cp,
                         "Ca": ca,
                         "Cpk": cpk,
