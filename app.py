@@ -7,7 +7,7 @@ from scipy.stats import norm
 import re
 import math
 
-# --- 1. CONFIG CHUẨN POWER BI ---
+# --- 1. CẤU HÌNH GIAO DIỆN CHUYÊN NGHIỆP ---
 st.set_page_config(page_title="KB9Q Line 4 Analytics", layout="wide")
 
 st.markdown("""
@@ -16,7 +16,7 @@ st.markdown("""
     div.stPlotlyChart {
         background-color: #ffffff;
         padding: 15px;
-        border-radius: 5px;
+        border-radius: 8px;
         border: 2px solid #cfd8dc;
         box-shadow: 2px 2px 5px rgba(0,0,0,0.05);
     }
@@ -31,15 +31,14 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # --- 2. XỬ LÝ DỮ LIỆU ---
-st.sidebar.header("📂 Data Management")
-uploaded_file = st.sidebar.file_uploader("Tải file sản xuất (Excel/CSV)", type=["xlsx", "csv", "xls"])
+st.sidebar.header("📂 Quản lý dữ liệu")
+uploaded_file = st.sidebar.file_uploader("Tải file Excel/CSV sản xuất", type=["xlsx", "csv", "xls"])
 
 if uploaded_file:
     try:
         df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
         df.columns = [re.sub(r'\s+', ' ', str(c)).strip() for c in df.columns]
 
-        # Filter 用途碼
         if "用途碼" in df.columns:
             usage_list = sorted(df["用途碼"].dropna().unique().tolist())
             selected_usages = st.sidebar.multiselect("Lọc 用途碼:", options=usage_list, default=usage_list)
@@ -47,7 +46,6 @@ if uploaded_file:
         else:
             df_filtered = df
 
-        # Thuật toán tìm cột thông minh
         def find_col(key_word, exclude_list=[]):
             for col in df.columns:
                 if re.search(key_word, col, re.IGNORECASE) and not any(ex in col for ex in exclude_list):
@@ -56,7 +54,6 @@ if uploaded_file:
 
         metrics_map = {"YS (降伏強度)": "YS", "TS (抗拉強度)": "TS", "EL (伸長率)": "EL", "Hardness (硬度)": "HRB", "YPE": "YPE"}
         available_metrics = [k for k, v in metrics_map.items() if find_col(v, ["要求", "管制", "規格"])]
-        
         selected_label = st.sidebar.selectbox("Chọn thông số phân tích:", available_metrics)
         view_mode = st.sidebar.radio("Chế độ xem:", ["View 1: Phân bố & Trending", "View 2: SPC Control Chart"])
         
@@ -64,7 +61,6 @@ if uploaded_file:
         data_col = find_col(short_key, ["要求", "管制", "規格"])
         zh_key = "降伏強度" if "YS" in short_key else "抗拉強度" if "TS" in short_key else "伸長率" if "EL" in short_key else "硬度" if "HRB" in short_key else "降伏點"
         
-        # Hàm lấy giá trị giới hạn an toàn (tránh lỗi nếu chỉ có 1 đầu)
         def get_limit(keyword, limit_type, category):
             col = next((c for c in df.columns if keyword in c and limit_type in c.lower() and category in c), None)
             if col:
@@ -72,7 +68,6 @@ if uploaded_file:
                 return float(val) if pd.notnull(val) else None
             return None
 
-        # Lấy tất cả các loại giới hạn
         v_lsl_int = get_limit(zh_key, "min", "管制")
         v_usl_int = get_limit(zh_key, "max", "管制")
         v_lsl_cust = get_limit(zh_key, "min", "客戶要求")
@@ -83,29 +78,23 @@ if uploaded_file:
             n, mu, sigma = len(plot_data), plot_data.mean(), plot_data.std()
             ucl, lcl = mu + 3*sigma, mu - 3*sigma
 
-            st.title(f"🚀 Line 4 Analytics: {selected_display if 'selected_display' in locals() else selected_label}")
+            st.title(f"🚀 Line 4 Analytics: {selected_label}")
 
-            # --- KPI Cards ---
+            # KPI Cards
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("Samples (n)", n)
             c2.metric("Mean", f"{mu:.2f}")
             c3.metric("StdDev (σ)", f"{sigma:.2f}")
             
-            # Tính Cpk linh hoạt (xử lý trường hợp chỉ có 1 đầu quy cách)
             target_lsl = v_lsl_cust if v_lsl_cust is not None else v_lsl_int
             target_usl = v_usl_cust if v_usl_cust is not None else v_usl_int
-            
             cpk = None
             if sigma > 0:
                 if target_lsl is not None and target_usl is not None:
                     cpk = min((target_usl - mu)/(3*sigma), (mu - target_lsl)/(3*sigma))
-                elif target_lsl is not None: # Chỉ có Min
-                    cpk = (mu - target_lsl)/(3*sigma)
-                elif target_usl is not None: # Chỉ có Max
-                    cpk = (target_usl - mu)/(3*sigma)
-            
-            c4.metric("Cpk (Spec)", f"{cpk:.2f}" if cpk is not None else "N/A", 
-                      delta="Đạt" if cpk and cpk >= 1.33 else "Kém" if cpk else None)
+                elif target_lsl is not None: cpk = (mu - target_lsl)/(3*sigma)
+                elif target_usl is not None: cpk = (target_usl - mu)/(3*sigma)
+            c4.metric("Cpk (Spec)", f"{cpk:.2f}" if cpk is not None else "N/A")
 
             # --- VIEW 1 ---
             if view_mode == "View 1: Phân bố & Trending":
@@ -114,18 +103,34 @@ if uploaded_file:
                 with col_left:
                     st.subheader("Distribution State")
                     k_bins = math.ceil(1 + 3.322 * math.log10(n)) if n > 0 else 10
+                    
+                    # LOGIC QUAN TRỌNG: Xác định phạm vi trục X để không bị mất nửa biểu đồ
+                    all_limits = [v for v in [v_lsl_int, v_usl_int, v_lsl_cust, v_usl_cust, lcl, ucl] if v is not None]
+                    x_min = min(plot_data.min(), min(all_limits)) * 0.98 if all_limits else plot_data.min() * 0.98
+                    x_max = max(plot_data.max(), max(all_limits)) * 1.02 if all_limits else plot_data.max() * 1.02
+                    
                     bin_width = (plot_data.max() - plot_data.min()) / k_bins if n > 1 else 1
+                    
                     fig_dist = go.Figure()
                     fig_dist.add_trace(go.Histogram(x=plot_data, nbinsx=k_bins, name='Actual', marker_color='#1976D2', opacity=0.6))
-                    if sigma > 0:
-                        x_c = np.linspace(mu - 4*sigma, mu + 4*sigma, 200)
-                        fig_dist.add_trace(go.Scatter(x=x_c, y=norm.pdf(x_c, mu, sigma) * n * bin_width, mode='lines', name='Normal', line=dict(color='#0D47A1', width=3)))
                     
-                    # Chỉ vẽ vạch đỏ nếu giá trị tồn tại
+                    if sigma > 0:
+                        # Mở rộng đường cong chuẩn theo trục X mới
+                        x_curve = np.linspace(x_min, x_max, 300)
+                        y_curve = norm.pdf(x_curve, mu, sigma) * n * bin_width
+                        fig_dist.add_trace(go.Scatter(x=x_curve, y=y_curve, mode='lines', name='Normal', line=dict(color='#0D47A1', width=3)))
+                    
+                    # Vẽ các vạch giới hạn khách hàng (Đỏ)
                     for v in [v_lsl_cust, v_usl_cust]:
                         if v is not None: fig_dist.add_vline(x=v, line_dash="dash", line_color="red", line_width=2)
                     
-                    fig_dist.update_layout(template="plotly_white", yaxis_title="Coils", margin=dict(t=20), showlegend=False)
+                    fig_dist.update_layout(
+                        template="plotly_white", 
+                        yaxis_title="Coils", 
+                        xaxis_range=[x_min, x_max], # Ép biểu đồ hiển thị toàn bộ dải giá trị
+                        margin=dict(t=20), 
+                        showlegend=False
+                    )
                     st.plotly_chart(fig_dist, use_container_width=True)
 
                 with col_right:
@@ -134,7 +139,6 @@ if uploaded_file:
                     fig_trend.add_trace(go.Scatter(x=plot_data.index, y=plot_data, mode='lines+markers', name='Value',
                                                   line=dict(color='#1976D2', width=2), marker=dict(size=7, color='white', line=dict(width=2, color='#1976D2'))))
                     
-                    # Danh sách cấu hình đường kẻ (chỉ add nếu không None)
                     lines = [
                         (mu, "Mean", "green", "solid", 1.01),
                         (ucl, "UCL(3σ)", "orange", "dash", 1.01),
