@@ -7,8 +7,8 @@ from scipy.stats import norm
 import re
 import math
 
-# --- 1. CẤU HÌNH GIAO DIỆN ---
-st.set_page_config(page_title="Hệ thống phân tích chất lượng Line 4", layout="wide")
+# --- 1. DASHBOARD CONFIGURATION ---
+st.set_page_config(page_title="Line 4 Quality Analytics System", layout="wide")
 
 st.markdown("""
     <style>
@@ -36,7 +36,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. HÀM XỬ LÝ DỮ LIỆU ---
+# --- 2. DATA PROCESSING FUNCTIONS ---
 def find_data_col(df, key):
     for col in df.columns:
         if re.search(key, col, re.IGNORECASE) and not any(kw in col for kw in ["管制", "規格", "要求"]):
@@ -55,16 +55,16 @@ export_config = {
     'displaylogo': False,
     'toImageButtonOptions': {
         'format': 'png', 
-        'filename': 'Line4_Quality_Analytics',
+        'filename': 'Quality_Analytics_Chart',
         'height': 600,
         'width': 1200,
         'scale': 2 
     }
 }
 
-# --- 3. THANH BÊN (SIDEBAR) ---
-st.sidebar.header("📂 NGUỒN DỮ LIỆU")
-uploaded_file = st.sidebar.file_uploader("Tải file Excel/CSV báo cáo", type=["xlsx", "csv", "xls"])
+# --- 3. SIDEBAR ---
+st.sidebar.header("📂 DATA SOURCE")
+uploaded_file = st.sidebar.file_uploader("Upload Data Report (Excel/CSV)", type=["xlsx", "csv", "xls"])
 
 if uploaded_file:
     try:
@@ -73,20 +73,20 @@ if uploaded_file:
 
         if "用途碼" in df_raw.columns:
             usage_list = sorted(df_raw["用途碼"].dropna().unique().tolist())
-            selected_usages = st.sidebar.multiselect("Lọc mã ứng dụng (用途碼):", options=usage_list, default=usage_list)
+            selected_usages = st.sidebar.multiselect("Filter Usage Code:", options=usage_list, default=usage_list)
             df = df_raw[df_raw["用途碼"].isin(selected_usages)]
         else:
             df = df_raw
 
-        metrics_map = {"YS (降伏強度)": "YS", "TS (抗拉強度)": "TS", "EL (伸長率)": "EL", "Hardness (硬 độ)": "HRB"}
+        metrics_map = {"YS": "YS", "TS": "TS", "EL": "EL", "Hardness": "HRB"}
         available = [k for k, v in metrics_map.items() if find_data_col(df, v)]
         
         if not available:
-            st.error("❌ Không tìm thấy các cột dữ liệu phù hợp.")
+            st.error("❌ No matching data columns found.")
             st.stop()
 
-        selected_label = st.sidebar.selectbox("Thông số cơ tính:", available)
-        view_mode = st.sidebar.radio("Cài đặt hiển thị:", ["Phân tích Tổng thể (View 1)", "Biểu đồ Kiểm soát SPC (View 2)"])
+        selected_label = st.sidebar.selectbox("Mechanical Parameter:", available)
+        view_mode = st.sidebar.radio("Display Settings:", ["Overall Analysis (View 1)", "SPC Control Charts (View 2)"])
         
         short_key = metrics_map[selected_label]
         data_col = find_data_col(df, short_key)
@@ -95,90 +95,84 @@ if uploaded_file:
         v_lsl_int = get_valid_limit(df, zh_key, "min", "管制")
         v_usl_int = get_valid_limit(df, zh_key, "max", "管制")
         v_lsl_cust = get_valid_limit(df, zh_key, "min", "客戶要求")
-        v_usl_cust = get_valid_limit(df, zh_key, "max", "客戶 yêu cầu")
+        v_usl_cust = get_valid_limit(df, zh_key, "max", "客戶要求")
 
         if data_col:
             plot_data = pd.to_numeric(df[data_col], errors='coerce').dropna().reset_index(drop=True)
             n, mu, sigma = len(plot_data), plot_data.mean(), plot_data.std()
             ucl, lcl = mu + 3*sigma, mu - 3*sigma
 
-            # Tính Cp và Cpk
-            t_lsl = v_lsl_cust if v_lsl_cust else v_lsl_int
-            t_usl = v_usl_cust if v_usl_cust else v_usl_int
+            # Define target and standard limits mapping
+            target_lsl = v_lsl_cust if v_lsl_cust else v_lsl_int
+            target_usl = v_usl_cust if v_usl_cust else v_usl_int
+            std_lsl = v_lsl_int if v_lsl_int else target_lsl
+            std_usl = v_usl_int if v_usl_int else target_usl
             
             cp, cpk = None, None
             if sigma > 0:
-                if t_lsl and t_usl:
-                    cp = (t_usl - t_lsl) / (6 * sigma)
-                    cpk = min((t_usl-mu)/(3*sigma), (mu-t_lsl)/(3*sigma))
-                elif t_lsl: 
-                    cpk = (mu - t_lsl)/(3*sigma)
-                elif t_usl: 
-                    cpk = (t_usl - mu)/(3*sigma)
+                if target_lsl and target_usl:
+                    cp = (target_usl - target_lsl) / (6 * sigma)
+                    cpk = min((target_usl-mu)/(3*sigma), (mu-target_lsl)/(3*sigma))
+                elif target_lsl: 
+                    cpk = (mu - target_lsl)/(3*sigma)
+                elif target_usl: 
+                    cpk = (target_usl - mu)/(3*sigma)
 
-            st.title(f"🚀 Phân tích Chất lượng: {selected_label}")
+            st.title(f"🚀 Quality Analytics: {selected_label}")
             
             k1, k2, k3, k4 = st.columns(4)
-            k1.metric("Tổng số mẫu (N)", n)
-            k2.metric("Trung bình (μ)", f"{mu:.2f}")
-            k3.metric("Độ lệch (σ)", f"{sigma:.2f}")
-            k4.metric("Năng lực Cpk", f"{cpk:.2f}" if cpk else "N/A", delta="Đạt" if cpk and cpk >= 1.33 else "Cảnh báo" if cpk else None)
+            k1.metric("Total Samples (N)", n)
+            k2.metric("Mean (μ)", f"{mu:.2f}")
+            k3.metric("Std Deviation (σ)", f"{sigma:.2f}")
+            k4.metric("Cpk Capability", f"{cpk:.2f}" if cpk else "N/A", delta="Pass" if cpk and cpk >= 1.33 else "Warning" if cpk else None)
 
             if "View 1" in view_mode:
                 
                 # ==========================================
-                # 1. BIỂU ĐỒ PHÂN BỐ (CHUẨN MINITAB STYLE)
+                # 1. DISTRIBUTION CHART (Histogram)
                 # ==========================================
-                st.subheader("I. Trạng thái phân bố (Histogram)")
+                st.subheader("I. Distribution State (Histogram)")
                 
                 k_bins = math.ceil(1 + 3.322 * math.log10(n)) if n > 0 else 10
-                
-                # Tính toán X-range
                 pts = [plot_data.min(), plot_data.max()]
-                all_lims = [v for v in [v_lsl_cust, v_usl_cust, v_lsl_int, v_usl_int, lcl, ucl] if v]
+                all_lims = [v for v in [target_lsl, target_usl, std_lsl, std_usl, lcl, ucl] if v]
                 pts.extend(all_lims)
                 min_pt, max_pt = min(pts), max(pts)
                 padding = (max_pt - min_pt) * 0.1 if max_pt != min_pt else max_pt * 0.05
                 x_range = [min_pt - padding, max_pt + padding]
 
-                # Tính toán Y-range (Đẩy cao lên 35% để lấy chỗ chứa Hộp thông số)
                 counts, _ = np.histogram(plot_data, bins=k_bins)
                 max_count = counts.max() if len(counts) > 0 else 10
                 bin_w = (plot_data.max() - plot_data.min()) / k_bins if n > 1 else 1
                 y_c_max = norm.pdf(mu, mu, sigma) * n * bin_w if sigma > 0 else 0
-                max_y_axis = max(max_count, y_c_max) * 1.35 # +35% headroom
+                max_y_axis = max(max_count, y_c_max) * 1.35 
 
                 fig_dist = go.Figure()
                 
-                # Histogram (Giống màu Line Hist trong hình)
                 fig_dist.add_trace(go.Histogram(
-                    x=plot_data, nbinsx=k_bins, name='Thực tế (LINE)',
+                    x=plot_data, nbinsx=k_bins, name='LINE Hist',
                     marker_color='#85B4D3', marker_line_color='white', marker_line_width=1, opacity=0.9
                 ))
                 
-                # Đường chuẩn Normal (Xanh đậm nét dày)
                 if sigma > 0:
                     x_c = np.linspace(x_range[0], x_range[1], 400)
                     y_c = norm.pdf(x_c, mu, sigma) * n * bin_w
                     fig_dist.add_trace(go.Scatter(
-                        x=x_c, y=y_c, mode='lines', name='Đường chuẩn (Fit)',
+                        x=x_c, y=y_c, mode='lines', name='LINE Fit',
                         line=dict(color='#003F88', width=3)
                     ))
 
-                # Thêm Vline thực tế
-                if v_lsl_cust: fig_dist.add_vline(x=v_lsl_cust, line_dash="dash", line_color="#FF0000", line_width=2)
-                if v_usl_cust: fig_dist.add_vline(x=v_usl_cust, line_dash="dash", line_color="#FF0000", line_width=2)
-                if v_lsl_int: fig_dist.add_vline(x=v_lsl_int, line_dash="dashdot", line_color="#800080", line_width=2)
-                if v_usl_int: fig_dist.add_vline(x=v_usl_int, line_dash="dashdot", line_color="#800080", line_width=2)
+                if target_lsl: fig_dist.add_vline(x=target_lsl, line_dash="dash", line_color="#FF0000", line_width=2)
+                if target_usl: fig_dist.add_vline(x=target_usl, line_dash="dash", line_color="#FF0000", line_width=2)
+                if std_lsl and std_lsl != target_lsl: fig_dist.add_vline(x=std_lsl, line_dash="dashdot", line_color="#800080", line_width=2)
+                if std_usl and std_usl != target_usl: fig_dist.add_vline(x=std_usl, line_dash="dashdot", line_color="#800080", line_width=2)
 
-                # Các đường giả (Dummy traces) để tạo Legend giống hệt hình mẫu
-                fig_dist.add_trace(go.Scatter(x=[None], y=[None], mode='lines', name='Khách hàng (Spec)', line=dict(color='#FF0000', width=2, dash='dash')))
-                fig_dist.add_trace(go.Scatter(x=[None], y=[None], mode='lines', name='Nội bộ (Internal)', line=dict(color='#800080', width=2, dash='dashdot')))
+                fig_dist.add_trace(go.Scatter(x=[None], y=[None], mode='lines', name='Target LSL/USL', line=dict(color='#FF0000', width=2, dash='dash')))
+                fig_dist.add_trace(go.Scatter(x=[None], y=[None], mode='lines', name='Std LSL/USL', line=dict(color='#800080', width=2, dash='dashdot')))
 
-                # Hộp SPC Indices (Góc trên bên trái)
                 cp_text = f"{cp:.2f}" if cp else "N/A"
                 cpk_text = f"{cpk:.2f}" if cpk else "N/A"
-                rating = "Tốt" if cpk and cpk >= 1.33 else "Cảnh báo" if cpk else "N/A"
+                rating = "Good" if cpk and cpk >= 1.33 else "Poor" if cpk else "N/A"
                 
                 box_text = f"<b>SPC Indices (LINE):</b><br>N = {n}<br>Mean = {mu:.2f}<br>Std = {sigma:.2f}<br>Cp = {cp_text}<br>Cpk = {cpk_text}<br>Rating: {rating}"
                 
@@ -190,62 +184,77 @@ if uploaded_file:
                     xanchor="left", yanchor="top"
                 )
 
-                # Cấu hình Layout (Viền đen xung quanh, Lưới xám, Legend góc phải)
                 fig_dist.update_layout(
-                    title=dict(text=f"<b>{selected_label} Distribution - Line 4</b>", x=0.5, font=dict(size=16)),
+                    title=dict(text=f"<b>{selected_label} Distribution</b>", x=0.5, font=dict(size=16)),
                     plot_bgcolor='white', paper_bgcolor='white',
                     height=500, xaxis_range=x_range, yaxis_range=[0, max_y_axis],
-                    xaxis_title="Giá trị", yaxis_title="Số lượng cuộn (Number of Coils)",
-                    showlegend=True,
-                    legend=dict(
-                        x=0.98, y=0.98, xanchor="right", yanchor="top",
-                        bgcolor="rgba(255, 255, 255, 0.9)", bordercolor="#D3D3D3", borderwidth=1
-                    )
+                    xaxis_title="Value", yaxis_title="Number of Coils",
+                    legend=dict(x=0.98, y=0.98, xanchor="right", yanchor="top", bgcolor="rgba(255, 255, 255, 0.9)", bordercolor="#D3D3D3", borderwidth=1)
                 )
                 
-                # Bật khung viền và lưới cho trục X, Y
                 fig_dist.update_xaxes(showline=True, linewidth=1, linecolor='black', mirror=True, showgrid=True, gridcolor='#E5E5E5')
                 fig_dist.update_yaxes(showline=True, linewidth=1, linecolor='black', mirror=True, showgrid=True, gridcolor='#E5E5E5')
 
                 st.plotly_chart(fig_dist, use_container_width=True, config=export_config)
 
                 # ==========================================
-                # 2. BIỂU ĐỒ TRENDING
+                # 2. TREND CHART (Bottom Legend Layout)
                 # ==========================================
-                st.subheader("II. Xu hướng sản xuất & Các tầng giới hạn")
+                st.subheader("II. Trend by Coil Sequence")
                 fig_trend = go.Figure()
+
+                # Add Target Zone Shading
+                if target_lsl and target_usl:
+                    fig_trend.add_hrect(y0=target_lsl, y1=target_usl, fillcolor="#e8f4e9", opacity=0.5, layer="below", line_width=0)
+                    # Dummy trace for Target Zone Legend
+                    fig_trend.add_trace(go.Scatter(x=[None], y=[None], mode='markers', marker=dict(size=15, color='#e8f4e9', symbol='square'), name='Target Zone'))
+
+                # Limit Lines & Legend Entries
+                if target_usl:
+                    fig_trend.add_hline(y=target_usl, line_dash="dash", line_color="green", line_width=2)
+                    fig_trend.add_trace(go.Scatter(x=[None], y=[None], mode='lines', line=dict(color='green', width=2, dash='dash'), name=f'Target USL={target_usl}'))
+                if target_lsl:
+                    fig_trend.add_hline(y=target_lsl, line_dash="dash", line_color="green", line_width=2)
+                    fig_trend.add_trace(go.Scatter(x=[None], y=[None], mode='lines', line=dict(color='green', width=2, dash='dash'), name=f'Target LSL={target_lsl}'))
+                
+                if std_usl and std_usl != target_usl:
+                    fig_trend.add_hline(y=std_usl, line_dash="dash", line_color="red", line_width=2)
+                    fig_trend.add_trace(go.Scatter(x=[None], y=[None], mode='lines', line=dict(color='red', width=2, dash='dash'), name=f'Std USL={std_usl}'))
+                if std_lsl and std_lsl != target_lsl:
+                    fig_trend.add_hline(y=std_lsl, line_dash="dash", line_color="red", line_width=2)
+                    fig_trend.add_trace(go.Scatter(x=[None], y=[None], mode='lines', line=dict(color='red', width=2, dash='dash'), name=f'Std LSL={std_lsl}'))
+
+                # Plot Main Data
                 fig_trend.add_trace(go.Scatter(x=plot_data.index, y=plot_data, mode='lines+markers', 
-                                              line=dict(color='#1f77b4', width=1.5),
-                                              marker=dict(size=5, color='#1f77b4')))
+                                              name='LINE', line=dict(color='#1f77b4', width=2),
+                                              marker=dict(symbol='square', size=6, color='#1f77b4')))
 
-                limit_configs_trend = [
-                    (mu, "Mean", "#008000", "dash", 1.01), 
-                    (ucl, "UCL (+3σ)", "#FF0000", "dash", 1.01), 
-                    (lcl, "LCL (-3σ)", "#FF0000", "dash", 1.01),
-                    (v_usl_int, "Nội bộ Max", "#FF9933", "dot", 1.12), 
-                    (v_lsl_int, "Nội bộ Min", "#FF9933", "dot", 1.12),
-                    (v_usl_cust, "KHÁCH MAX", "#113763", "dashdot", 1.23), 
-                    (v_lsl_cust, "KHÁCH MIN", "#113763", "dashdot", 1.23)
-                ]
+                # Detect and Plot 'Out of Control' Points
+                ooc_x, ooc_y = [], []
+                for i, val in enumerate(plot_data):
+                    if (std_usl and val > std_usl) or (std_lsl and val < std_lsl):
+                        ooc_x.append(i)
+                        ooc_y.append(val)
+                if ooc_x:
+                    fig_trend.add_trace(go.Scatter(x=ooc_x, y=ooc_y, mode='markers', 
+                                                  name='Out of Control', marker=dict(color='red', size=10, symbol='circle')))
 
-                for v, lbl, clr, sty, pos in limit_configs_trend:
-                    if v:
-                        fig_trend.add_hline(y=v, line_dash=sty, line_color=clr, line_width=1.2)
-                        fig_trend.add_annotation(
-                            x=pos, y=v, xref="paper", yref="y",
-                            text=f"<b>{lbl}: {v:.1f}</b>",
-                            showarrow=False, font=dict(color=clr, size=11), 
-                            xanchor="left", yanchor="middle"
-                        )
-
-                fig_trend.update_layout(template="simple_white", height=500, margin=dict(l=50, r=260, t=30, b=50), showlegend=False,
-                                       xaxis_title="Thứ tự cuộn (Sequence)", yaxis_title="Giá trị đo thực tế",
-                                       font=dict(family="Segoe UI", size=12))
+                # Layout configuration
+                fig_trend.update_layout(
+                    title=dict(text=f"<b>{selected_label} Trend by Coil Sequence</b>", x=0.5, font=dict(size=16)),
+                    template="simple_white", height=550,
+                    xaxis_title="", yaxis_title="",
+                    legend=dict(orientation="h", x=0.5, xanchor="center", y=-0.15, yanchor="top")
+                )
+                
+                # Framing the chart
+                fig_trend.update_xaxes(showline=True, linewidth=1, linecolor='black', mirror=True)
+                fig_trend.update_yaxes(showline=True, linewidth=1, linecolor='black', mirror=True)
                 
                 st.plotly_chart(fig_trend, use_container_width=True, config=export_config)
 
             else:
-                st.subheader("Biểu đồ kiểm soát SPC I-MR")
+                st.subheader("SPC I-MR Control Charts")
                 mr = plot_data.diff().abs()
                 fig_imr = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, subplot_titles=("I-Chart", "MR-Chart"))
                 fig_imr.add_trace(go.Scatter(y=plot_data, mode='lines+markers', line=dict(color='#1f77b4'), marker=dict(size=4)), row=1, col=1)
@@ -255,9 +264,12 @@ if uploaded_file:
                 fig_imr.add_trace(go.Scatter(y=mr, mode='lines+markers', line=dict(color='#1f77b4'), marker=dict(size=4)), row=2, col=1)
                 fig_imr.update_layout(height=750, template="simple_white", showlegend=False)
                 
+                fig_imr.update_xaxes(showline=True, linewidth=1, linecolor='black', mirror=True)
+                fig_imr.update_yaxes(showline=True, linewidth=1, linecolor='black', mirror=True)
+                
                 st.plotly_chart(fig_imr, use_container_width=True, config=export_config)
 
     except Exception as e:
-        st.error(f"Error system: {e}")
+        st.error(f"System Error: {e}")
 else:
-    st.info("👈 Tải file Excel báo cáo sản xuất ở Sidebar bên trái để bắt đầu phân tích đa tầng giới hạn.")
+    st.info("👈 Upload production data report on the sidebar to begin.")
