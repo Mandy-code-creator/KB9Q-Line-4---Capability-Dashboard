@@ -94,7 +94,7 @@ if uploaded_file:
             st.title(f"📊 Quality Analytics: {selected_label}")
 
             # ==========================================
-            # VIEW 1: PROCESS ANALYTICS (FULL STATIC)
+            # VIEW 1: PROCESS ANALYTICS
             # ==========================================
             if view_mode == "Process Analytics":
                 tab_trend, tab_dist = st.tabs(["📈 Trend Analysis", "📊 Distribution & SPC"])
@@ -103,9 +103,7 @@ if uploaded_file:
                 with tab_trend:
                     fig_t, ax_t = plt.subplots(figsize=(12, 6))
                     ax_t.plot(np.arange(1, n+1), plot_data, marker="o", markersize=6, color="#1f77b4", label="Actual Value")
-                    # Thêm đường Mean vào Trend
                     ax_t.axhline(mu, color="purple", ls="--", lw=2, label=f"Mean: {mu:.1f}")
-                    
                     if cust_lsl: ax_t.axhline(cust_lsl, color="green", ls="-", lw=3, label=f"Cust LSL: {cust_lsl:.1f}")
                     if cust_usl: ax_t.axhline(cust_usl, color="green", ls="-", lw=3, label=f"Cust USL: {cust_usl:.1f}")
                     if int_lsl: ax_t.axhline(int_lsl, color="red", ls="--", lw=3, label=f"Int LSL: {int_lsl:.1f}")
@@ -113,43 +111,51 @@ if uploaded_file:
                     ax_t.axhline(ucl_v1, color="#ff7f0e", ls=":", lw=3, label="3σ UCL")
                     ax_t.axhline(lcl_v1, color="#ff7f0e", ls=":", lw=3, label="3σ LCL")
                     
+                    # BỔ SUNG NHÃN TRỤC VIEW 1 - TREND
+                    ax_t.set_xlabel("Số thứ tự cuộn thép (Coil Sequence)", weight="bold")
+                    ax_t.set_ylabel(f"Giá trị {selected_label}", weight="bold")
+                    
                     ax_t.set_title(f"{selected_label} Trend Analysis", pad=20)
                     ax_t.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), ncol=4, fontsize=9)
                     apply_full_border(ax_t); plt.tight_layout(); st.pyplot(fig_t)
 
                 with tab_dist:
                     fig_d, ax_d = plt.subplots(figsize=(12, 6))
-                    ax_d.hist(plot_data, bins=20, density=True, alpha=0.4, color="#7FB3D5", edgecolor="black")
-                    xs = np.linspace(plot_data.min()*0.9, plot_data.max()*1.1, 500)
-                    ax_d.plot(xs, norm.pdf(xs, mu, sigma_fixed), color="#1E3A8A", lw=3, label="Normal Fit")
+                    counts, bins, patches = ax_d.hist(plot_data, bins=20, density=False, alpha=0.4, color="#7FB3D5", edgecolor="black")
                     
-                    def add_vline_stepped(ax, val, color, ls, label, level=1):
+                    # BỔ SUNG NHÃN TRỤC VIEW 1 - DISTRIBUTION
+                    ax_d.set_xlabel(f"Giá trị {selected_label}", weight="bold")
+                    ax_d.set_ylabel("Số lượng cuộn thép (Coil Count)", weight="bold")
+                    
+                    ax_pdf = ax_d.twinx()
+                    xs = np.linspace(plot_data.min()*0.9, plot_data.max()*1.1, 500)
+                    ax_pdf.plot(xs, norm.pdf(xs, mu, sigma_fixed), color="#1E3A8A", lw=3, label="Normal Fit")
+                    ax_pdf.set_yticks([])
+                    
+                    def add_vline_std(ax, val, color, ls, label, level=1):
                         if val is not None:
                             ax.axvline(val, color=color, linestyle=ls, linewidth=3, label=label)
                             y_max = ax.get_ylim()[1]
-                            # Phân tầng cao độ để không bị ghi đè nhãn số
                             y_pos = y_max * (1 + (level * 0.07)) 
                             ax.text(val, y_pos, f"{val:.1f}", color=color, ha='center', va='bottom', fontweight='bold')
 
-                    # Level 0 cho Mean (Dời lên cao nhất hoặc riêng biệt)
-                    add_vline_stepped(ax_d, mu, "blue", "-", "Mean", 0)
-                    add_vline_stepped(ax_d, cust_lsl, "green", "-", "Cust LSL", 1)
-                    add_vline_stepped(ax_d, cust_usl, "green", "-", "Cust USL", 1)
-                    add_vline_stepped(ax_d, int_lsl, "red", "--", "Int LSL", 2)
-                    add_vline_stepped(ax_d, int_usl, "red", "--", "Int USL", 2)
-                    add_vline_stepped(ax_d, ucl_v1, "#ff7f0e", ":", "3σ UCL", 3)
-                    add_vline_stepped(ax_d, lcl_v1, "#ff7f0e", ":", "3σ LCL", 3)
-
+                    add_vline_std(ax_d, mu, "blue", "-", "Mean", 0)
+                    add_vline_std(ax_d, cust_lsl, "green", "-", "Cust LSL", 1)
+                    add_vline_std(ax_d, cust_usl, "green", "-", "Cust USL", 1)
+                    add_vline_std(ax_d, int_lsl, "red", "--", "Int LSL", 2)
+                    add_vline_std(ax_d, int_usl, "red", "--", "Int USL", 2)
+                    add_vline_std(ax_d, ucl_v1, "#ff7f0e", ":", "3σ UCL", 3)
+                    add_vline_std(ax_d, lcl_v1, "#ff7f0e", ":", "3σ LCL", 3)
+                    
                     ax_d.set_title(f"{selected_label} Distribution & Capability", pad=80)
                     ax_d.legend(loc="upper left", bbox_to_anchor=(1, 1))
                     apply_full_border(ax_d); plt.tight_layout(); st.pyplot(fig_d)
 
             # ==========================================
-            # VIEW 2: SPC & LIMIT OPTIMIZATION
+            # VIEW 2: SPC & OPTIMIZATION
             # ==========================================
             else:
                 st.subheader("II. Control Limit Optimization & I-MR")
-                
                 st.markdown("##### ⚙️ Parameters")
                 c_i1, c_i2 = st.columns(2)
                 with c_i1:
@@ -157,38 +163,40 @@ if uploaded_file:
                 with c_i2:
                     m_sigma = st.number_input("Target Sigma (0=auto):", 0.0, 100.0, 0.0, 0.1)
                 
-                s_std = sigma_fixed
+                s_used = sigma_fixed if m_sigma == 0 else m_sigma
                 q1, q3 = plot_data.quantile(0.25), plot_data.quantile(0.75)
                 s_iqr = (q3 - q1) / 1.349
-                s_used = s_std if m_sigma == 0 else m_sigma
 
-                st.markdown("##### 🎯 Calculation Steps")
+                st.markdown("##### 🎯 Step-by-Step Calculation")
                 col_t1, col_t2 = st.columns(2)
                 with col_t1:
                     st.write("**Method: Standard Deviation**")
                     st.table(pd.DataFrame({
                         "Metric": ["Mean", "Sigma (σ)", "LSL", "USL"],
-                        "Value": [format_num(mu), format_num(s_std), format_num(mu - k_val*s_std), format_num(mu + k_val*s_std)],
-                        "Calculation": ["Avg", "StdDev", f"Mean-({k_val}*σ)", f"Mean+({k_val}*σ)"]
+                        "Value": [format_num(mu), format_num(sigma_fixed), format_num(mu - k_val*sigma_fixed), format_num(mu + k_val*sigma_fixed)],
+                        "Formula": ["Sum / N", "StdDev", f"Mean-({k_val}*σ)", f"Mean+({k_val}*σ)"]
                     }))
                 with col_t2:
                     st.write("**Method: IQR (Robust)**")
                     st.table(pd.DataFrame({
                         "Metric": ["Mean", "Sigma_iqr", "LSL", "USL"],
                         "Value": [format_num(mu), format_num(s_iqr), format_num(mu - k_val*s_iqr), format_num(mu + k_val*s_iqr)],
-                        "Calculation": ["Avg", "IQR/1.349", f"Mean-({k_val}*σ_i)", f"Mean+({k_val}*σ_i)"]
+                        "Formula": ["Sum / N", "IQR / 1.349", f"Mean-({k_val}*σ_i)", f"Mean+({k_val}*σ_i)"]
                     }))
 
                 st.markdown("---")
                 fig_imr, ax_i = plt.subplots(figsize=(12, 6))
                 ax_i.plot(plot_data, marker="o", color="#1f77b4", label="Actual Data", alpha=0.7)
-                # Thêm đường Mean vào Trend của View 2
                 ax_i.axhline(mu, color="purple", ls="--", lw=2, label=f"Mean: {mu:.1f}")
                 
                 if int_lsl: ax_i.axhline(int_lsl, color="red", ls="--", label="Current LSL (File)")
                 if int_usl: ax_i.axhline(int_usl, color="red", ls="--", label="Current USL (File)")
                 ax_i.axhline(mu + k_val*s_used, color="darkred", ls="-", lw=2, label=f"Proposed USL ({k_val}σ)")
                 ax_i.axhline(mu - k_val*s_used, color="darkred", ls="-", lw=2, label=f"Proposed LSL ({k_val}σ)")
+                
+                # BỔ SUNG NHÃN TRỤC VIEW 2 - I-CHART
+                ax_i.set_xlabel("Số thứ tự cuộn thép (Coil Sequence)", weight="bold")
+                ax_i.set_ylabel(f"Giá trị {selected_label}", weight="bold")
                 
                 ax_i.set_title("I-Chart: Optimization Comparison", weight="bold")
                 ax_i.legend(loc="upper left", bbox_to_anchor=(1, 1))
