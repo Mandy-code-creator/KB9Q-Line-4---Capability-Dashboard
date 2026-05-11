@@ -17,10 +17,10 @@ st.markdown("""
     .main { background-color: #F8FAFC; }
     div.stPlotlyChart {
         background-color: #ffffff;
-        padding: 15px;
-        border-radius: 10px;
+        padding: 10px;
+        border-radius: 8px;
         border: 1px solid #E2E8F0;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
     }
     div[data-testid="stMetric"] {
         background-color: #ffffff;
@@ -86,11 +86,9 @@ if uploaded_file:
         short_key = metrics_map[selected_label]
         data_col = find_data_col(df, short_key)
         
-        # Mapping Vietnamese/Chinese keywords for limits
         zh_map = {"YS": "降伏強度", "TS": "抗拉強度", "EL": "伸長率", "HRB": "硬度", "YPE": "YPE"}
         zh_key = zh_map.get(short_key, short_key)
         
-        # Extract Limits
         v_lsl_std = get_limit(df, zh_key, "min", "管制")
         v_usl_std = get_limit(df, zh_key, "max", "管制")
         v_lsl_tgt = get_limit(df, zh_key, "min", "客戶要求")
@@ -101,7 +99,6 @@ if uploaded_file:
             n, mu, sigma = len(plot_data), plot_data.mean(), plot_data.std()
             ucl, lcl = mu + 3*sigma, mu - 3*sigma
 
-            # Capability Calculations
             cp, cpk = None, None
             if sigma > 0:
                 if v_lsl_std and v_usl_std:
@@ -112,7 +109,6 @@ if uploaded_file:
 
             st.title(f"📊 Quality Analytics: {selected_label}")
             
-            # --- TOP KPI METRICS ---
             k1, k2, k3, k4 = st.columns(4)
             k1.metric("Samples (N)", n)
             k2.metric("Mean (μ)", f"{mu:.2f}")
@@ -133,7 +129,7 @@ if uploaded_file:
                 x_range = [min(pts) - abs(min(pts)*0.1), max(pts) + abs(max(pts)*0.1)]
 
                 fig_dist = go.Figure()
-                fig_dist.add_trace(go.Histogram(x=plot_data, nbinsx=k_bins, name='Data', marker_color='#7FB3D5', opacity=0.7))
+                fig_dist.add_trace(go.Histogram(x=plot_data, nbinsx=k_bins, name='Data', marker_color='#7FB3D5', opacity=0.8, marker_line_color='white', marker_line_width=1))
                 
                 if sigma > 0:
                     x_c = np.linspace(x_range[0], x_range[1], 200)
@@ -141,51 +137,65 @@ if uploaded_file:
                     y_c = norm.pdf(x_c, mu, sigma) * n * bin_w
                     fig_dist.add_trace(go.Scatter(x=x_c, y=y_c, mode='lines', name='Normal', line=dict(color='#1E3A8A', width=2)))
 
-                # Function to add labeled vlines
-                def add_dist_limit(val, label, color, dash, y_pos):
+                # HÀM VẼ ĐƯỜNG DỌC (HISTOGRAM) SẮC NÉT BẰNG TÍNH NĂNG GỐC CỦA PLOTLY
+                def add_smart_vline(val, name, color, dash, pos):
                     if val is not None:
-                        fig_dist.add_vline(x=val, line_dash=dash, line_color=color, line_width=2)
-                        fig_dist.add_annotation(x=val, y=y_pos, yref="paper", text=f"{label}:{val:.1f}", 
-                                              showarrow=False, font=dict(color=color, size=10), bgcolor="white", yshift=10)
+                        fig_dist.add_vline(
+                            x=val, line_dash=dash, line_color=color, line_width=2.5, opacity=1,
+                            annotation_text=f"<b>{name}:<br>{val:.1f}</b>",
+                            annotation_position=pos,
+                            annotation_font=dict(size=11, color=color),
+                            annotation_bgcolor="rgba(255,255,255,0.85)"
+                        )
 
-                add_dist_limit(v_lsl_tgt, "Cust LSL", "#2E7D32", "solid", 0.95)
-                add_dist_limit(v_usl_tgt, "Cust USL", "#2E7D32", "solid", 0.95)
-                add_dist_limit(v_lsl_std, "Int LSL", "#D32F2F", "dash", 0.82)
-                add_dist_limit(v_usl_std, "Int USL", "#D32F2F", "dash", 0.82)
+                # Bố trí so le (trên/dưới, trái/phải) để tránh đè chữ
+                add_smart_vline(v_usl_tgt, "Cust USL", "#2E7D32", "solid", "top right")
+                add_smart_vline(v_lsl_tgt, "Cust LSL", "#2E7D32", "solid", "top left")
+                add_smart_vline(v_usl_std, "Int USL", "#D32F2F", "dash", "bottom right")
+                add_smart_vline(v_lsl_std, "Int LSL", "#D32F2F", "dash", "bottom left")
 
-                fig_dist.update_layout(template="simple_white", height=500, xaxis_range=x_range, showlegend=False, margin=dict(t=80))
+                fig_dist.update_layout(template="simple_white", height=500, xaxis_range=x_range, showlegend=False, margin=dict(t=50))
                 st.plotly_chart(fig_dist, use_container_width=True, config=export_config)
 
                 # --- CHART 2: TREND BY SEQUENCE ---
                 st.subheader("II. Trend Analysis")
                 fig_trend = go.Figure()
 
-                # Highlight customer zone
                 if v_lsl_tgt and v_usl_tgt:
-                    fig_trend.add_hrect(y0=v_lsl_tgt, y1=v_usl_tgt, fillcolor="#E8F5E9", opacity=0.3, layer="below", line_width=0)
+                    fig_trend.add_hrect(y0=v_lsl_tgt, y1=v_usl_tgt, fillcolor="#E8F5E9", opacity=0.4, layer="below", line_width=0)
 
-                limits = [
-                    (v_usl_tgt, "Cust USL", "#2E7D32", "solid"), (v_lsl_tgt, "Cust LSL", "#2E7D32", "solid"),
-                    (v_usl_std, "Int USL", "#D32F2F", "dash"), (v_lsl_std, "Int LSL", "#D32F2F", "dash"),
-                    (ucl, "UCL", "#E67E22", "dot"), (lcl, "LCL", "#E67E22", "dot"), (mu, "Mean", "#8E44AD", "dashdot")
-                ]
-
-                for val, name, color, dash in limits:
+                # HÀM VẼ ĐƯỜNG NGANG (TREND) SẮC NÉT BẰNG TÍNH NĂNG GỐC CỦA PLOTLY
+                def add_smart_hline(val, name, color, dash, pos):
                     if val is not None:
-                        fig_trend.add_hline(y=val, line_dash=dash, line_color=color)
-                        fig_trend.add_annotation(x=1.01, y=val, xref="paper", text=f"<b>{name}:{val:.1f}</b>", 
-                                               showarrow=False, font=dict(color=color, size=10), xanchor="left")
+                        fig_trend.add_hline(
+                            y=val, line_dash=dash, line_color=color, line_width=2.5, opacity=1,
+                            annotation_text=f"<b>{name}: {val:.1f}</b>",
+                            annotation_position=pos,
+                            annotation_font=dict(size=11, color=color),
+                            annotation_bgcolor="rgba(255,255,255,0.85)"
+                        )
+
+                # Bố trí so le để không bị đè chữ nếu giá trị bằng nhau
+                add_smart_hline(v_usl_tgt, "Cust USL", "#2E7D32", "solid", "top right")
+                add_smart_hline(v_usl_std, "Int USL", "#D32F2F", "dash", "bottom right")
+                add_smart_hline(v_lsl_tgt, "Cust LSL", "#2E7D32", "solid", "bottom right")
+                add_smart_hline(v_lsl_std, "Int LSL", "#D32F2F", "dash", "top right")
+                
+                # Giới hạn thống kê
+                add_smart_hline(ucl, "UCL", "#E67E22", "dot", "top left")
+                add_smart_hline(lcl, "LCL", "#E67E22", "dot", "bottom left")
+                add_smart_hline(mu, "Mean", "#8E44AD", "dashdot", "top left")
 
                 fig_trend.add_trace(go.Scatter(x=plot_data.index, y=plot_data, mode='lines+markers', 
                                             line=dict(color='#1F77B4', width=2), marker=dict(size=6, symbol='square')))
                 
-                # Out of spec points
                 ooc = plot_data[(plot_data > (v_usl_std or 9999)) | (plot_data < (v_lsl_std or -9999))]
                 if not ooc.empty:
                     fig_trend.add_trace(go.Scatter(x=ooc.index, y=ooc, mode='markers', name='Alert', 
                                                 marker=dict(color='red', size=10, symbol='circle-open', line_width=2)))
 
-                fig_trend.update_layout(template="simple_white", height=600, margin=dict(r=120, t=50), showlegend=False)
+                # Không cần margin rộng nữa vì chữ nằm gọn bên trong khung vẽ
+                fig_trend.update_layout(template="simple_white", height=600, margin=dict(t=50, r=20), showlegend=False)
                 st.plotly_chart(fig_trend, use_container_width=True, config=export_config)
 
             # ==========================================
@@ -197,16 +207,22 @@ if uploaded_file:
                 fig_imr = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, 
                                       subplot_titles=("Individual Chart (I)", "Moving Range Chart (MR)"))
                 
-                # I-Chart
                 fig_imr.add_trace(go.Scatter(y=plot_data, mode='lines+markers', line=dict(color='#1F77B4')), row=1, col=1)
-                for val, name, color in [(ucl, 'UCL', 'red'), (lcl, 'LCL', 'red'), (mu, 'Mean', 'green')]:
-                    fig_imr.add_hline(y=val, line_dash="dash", line_color=color, row=1, col=1)
                 
-                # MR-Chart
+                def add_imr_hline(val, label, color, row):
+                    if val is not None:
+                        fig_imr.add_hline(y=val, line_dash="dash", line_color=color, line_width=2,
+                                        annotation_text=f"{label}: {val:.1f}", annotation_position="top right",
+                                        annotation_font=dict(color=color), row=row, col=1)
+
+                add_imr_hline(ucl, 'UCL', 'red', 1)
+                add_imr_hline(lcl, 'LCL', 'red', 1)
+                add_imr_hline(mu, 'Mean', 'green', 1)
+                
                 fig_imr.add_trace(go.Scatter(y=mr, mode='lines+markers', line=dict(color='#1F77B4')), row=2, col=1)
                 mr_mean = mr.mean()
-                fig_imr.add_hline(y=mr_mean, line_dash="dash", line_color="green", row=2, col=1)
-                fig_imr.add_hline(y=mr_mean * 3.267, line_dash="dash", line_color="red", row=2, col=1) # UCL for MR
+                add_imr_hline(mr_mean, 'MR Mean', 'green', 2)
+                add_imr_hline(mr_mean * 3.267, 'MR UCL', 'red', 2)
 
                 fig_imr.update_layout(height=700, template="simple_white", showlegend=False)
                 st.plotly_chart(fig_imr, use_container_width=True, config=export_config)
