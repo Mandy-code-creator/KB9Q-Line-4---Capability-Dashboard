@@ -84,107 +84,115 @@ if uploaded_file:
 
         if data_col:
             plot_data = pd.to_numeric(df[data_col], errors='coerce').dropna().reset_index(drop=True)
-            n, mu, sigma = len(plot_data), plot_data.mean(), plot_data.std(ddof=1)
+            n = len(plot_data)
+            mu = plot_data.mean()
+            sigma = plot_data.std(ddof=1)
+            
+            # Tính toán thêm chỉ số IQR
+            q1 = plot_data.quantile(0.25)
+            q3 = plot_data.quantile(0.75)
+            iqr = q3 - q1
+            sigma_iqr = iqr / 1.349 # Ước lượng sigma từ IQR cho phân phối chuẩn
+            
             ucl_3s, lcl_3s = mu + 3*sigma, mu - 3*sigma
 
             st.title(f"📊 Quality Analytics: {selected_label}")
 
-            # --- VIEW 1: GIỮ NGUYÊN THIẾT KẾ BAN ĐẦU ---
+            # ==========================================
+            # VIEW 1: GIỮ NGUYÊN
+            # ==========================================
             if view_mode == "Process Analytics":
                 tab_trend, tab_dist = st.tabs(["📈 Trend Analysis", "📊 Distribution & SPC"])
-
                 with tab_trend:
                     x_idx = np.arange(1, n + 1)
                     fig_t, ax_t = plt.subplots(figsize=(12, 6))
                     ax_t.plot(x_idx, plot_data, marker="o", markersize=6, label="Actual Value", color="#1f77b4", zorder=1)
-                    
-                    out_mask = pd.Series([False] * n)
-                    if int_usl: out_mask |= (plot_data > int_usl)
-                    if int_lsl: out_mask |= (plot_data < int_lsl)
+                    out_mask = (plot_data > (int_usl if int_usl else 99999)) | (plot_data < (int_lsl if int_lsl else -99999))
                     if out_mask.any():
-                        ax_t.scatter(x_idx[out_mask], plot_data[out_mask], color='red', s=120, label="Out of Internal Spec", edgecolor='black', linewidth=1.5, zorder=3)
-
+                        ax_t.scatter(x_idx[out_mask], plot_data[out_mask], color='red', s=120, label="Out of Internal Spec", edgecolor='black', zorder=3)
                     if cust_lsl: ax_t.axhline(cust_lsl, color="green", linestyle="-", linewidth=3, label=f"Cust LSL: {cust_lsl:.1f}")
                     if cust_usl: ax_t.axhline(cust_usl, color="green", linestyle="-", linewidth=3, label=f"Cust USL: {cust_usl:.1f}")
                     if int_lsl: ax_t.axhline(int_lsl, color="red", linestyle="--", linewidth=3, label=f"Int LSL: {int_lsl:.1f}")
                     if int_usl: ax_t.axhline(int_usl, color="red", linestyle="--", linewidth=3, label=f"Int USL: {int_usl:.1f}")
-                    ax_t.axhline(ucl_3s, color="#ff7f0e", linestyle=":", linewidth=3, label=f"3σ UCL: {ucl_3s:.1f}")
-                    ax_t.axhline(lcl_3s, color="#ff7f0e", linestyle=":", linewidth=3, label=f"3σ LCL: {lcl_3s:.1f}")
-                    ax_t.axhline(mu, color="purple", linestyle="-.", linewidth=2, label=f"Mean: {mu:.1f}")
-
+                    ax_t.axhline(ucl_3s, color="#ff7f0e", linestyle=":", linewidth=3, label=f"3σ Limit")
+                    ax_t.axhline(lcl_3s, color="#ff7f0e", linestyle=":", linewidth=3)
                     ax_t.set_title(f"{selected_label} Trend Analysis", pad=20)
                     ax_t.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), frameon=True, ncol=3, fontsize=9)
-                    apply_full_border(ax_t)
-                    plt.tight_layout(); st.pyplot(fig_t)
+                    apply_full_border(ax_t); plt.tight_layout(); st.pyplot(fig_t)
 
                 with tab_dist:
-                    cp, ca, cpk = 0.0, 0.0, 0.0
-                    if sigma > 0 and int_usl and int_lsl:
-                        cp = (int_usl - int_lsl) / (6 * sigma)
-                        ca = ((mu - (int_usl + int_lsl) / 2) / ((int_usl - int_lsl) / 2)) * 100
-                        cpu = (int_usl - mu) / (3 * sigma)
-                        cpl = (mu - int_lsl) / (3 * sigma)
-                        cpk = min(cpu, cpl)
-
+                    cpk = min((int_usl - mu)/(3*sigma), (mu - int_lsl)/(3*sigma)) if sigma > 0 and int_usl and int_lsl else 0
                     fig_d, ax_d = plt.subplots(figsize=(12, 6))
                     ax_d.hist(plot_data, bins=20, density=True, alpha=0.5, color="#7FB3D5", edgecolor="black")
-                    xs = np.linspace(plot_data.min()*0.9, plot_data.max()*1.1, 500)
-                    ax_d.plot(xs, norm.pdf(xs, mu, sigma), color="#1E3A8A", linewidth=3, label="Normal Fit")
-                    
+                    xs = np.linspace(plot_data.min()*0.9, plot_data.max()*1.1, 500); ax_d.plot(xs, norm.pdf(xs, mu, sigma), color="#1E3A8A", linewidth=3)
                     def add_vline_with_value(ax, val, color, ls, label, level=1):
                         if val is not None:
                             ax.axvline(val, color=color, linestyle=ls, linewidth=3, label=label)
                             y_pos = ax.get_ylim()[1] * (1 + (level - 1) * 0.06)
                             ax.text(val, y_pos, f"{val:.1f}", color=color, ha='center', va='bottom', fontsize=11, fontweight='bold')
+                    add_vline_with_value(ax_d, cust_lsl, "green", "-", "Cust LSL", 1); add_vline_with_value(ax_d, cust_usl, "green", "-", "Cust USL", 1)
+                    add_vline_with_value(ax_d, int_lsl, "red", "--", "Int LSL", 2); add_vline_with_value(ax_d, int_usl, "red", "--", "Int USL", 2)
+                    add_vline_with_value(ax_d, ucl_3s, "#ff7f0e", ":", "3σ UCL", 3); add_vline_with_value(ax_d, lcl_3s, "#ff7f0e", ":", "3σ LCL", 3)
+                    ax_d.set_title(f"{selected_label} Distribution & Capability", pad=65); ax_d.legend(loc="upper left", bbox_to_anchor=(1, 1))
+                    apply_full_border(ax_d); plt.tight_layout(); st.pyplot(fig_d)
+                    st.dataframe(pd.DataFrame([{"N": n, "Mean": f"{mu:.3f}", "Std": f"{sigma:.3f}", "Cpk": f"{cpk:.3f}"}]), hide_index=True)
 
-                    add_vline_with_value(ax_d, cust_lsl, "green", "-", "Cust LSL", 1)
-                    add_vline_with_value(ax_d, cust_usl, "green", "-", "Cust USL", 1)
-                    add_vline_with_value(ax_d, int_lsl, "red", "--", "Int LSL", 2)
-                    add_vline_with_value(ax_d, int_usl, "red", "--", "Int USL", 2)
-                    add_vline_with_value(ax_d, ucl_3s, "#ff7f0e", ":", "3σ UCL", 3)
-                    add_vline_with_value(ax_d, lcl_3s, "#ff7f0e", ":", "3σ LCL", 3)
-
-                    ax_d.set_title(f"{selected_label} Distribution & Capability", pad=65)
-                    ax_d.legend(loc="upper left", bbox_to_anchor=(1, 1))
-                    apply_full_border(ax_d)
-                    plt.tight_layout(); st.pyplot(fig_d)
-
-                    rating = "Excellent" if cpk >= 1.33 else ("Good" if cpk >= 1.0 else "Poor")
-                    color_code = "green" if cpk >= 1.33 else ("orange" if cpk >= 1.0 else "red")
-                    df_spc = pd.DataFrame([{"N": n, "Mean": mu, "Std": sigma, "Cp": cp, "Ca (%)": ca, "Cpk": cpk, "Rating": rating}])
-                    st.dataframe(df_spc.style.format("{:.3f}", subset=["Mean", "Std", "Cp", "Ca (%)", "Cpk"]).map(lambda v: f'color: {color_code}; font-weight: bold', subset=['Rating']), hide_index=True, use_container_width=True)
-
-            # --- VIEW 2: GỘP TÍNH TOÁN VÀ BIỂU ĐỒ I-MR ---
+            # ==========================================
+            # VIEW 2: SPC & LIMIT OPTIMIZATION (Gộp bảng dữ liệu và I-MR)
+            # ==========================================
             else:
-                st.subheader("II. Control Limit Optimization & I-MR Charts")
+                st.subheader("II. Statistics & Control Limit Optimization")
                 
-                # Phần tính toán nằm trên
-                c1, c2 = st.columns(2)
-                with c1:
-                    st.info(f"**Năng lực thực tế:** Mean: {mu:.2f} | σ: {sigma:.2f}")
-                with c2:
-                    st.success(f"**Đề xuất ±3σ:** LSL: {lcl_3s:.1f} | USL: {ucl_3s:.1f}")
+                # --- PHẦN 1: BẢNG DỮ LIỆU THỐNG KÊ (NẰM TRÊN) ---
+                st.markdown("##### 📏 Descriptive Statistics")
+                col_stats_1, col_stats_2 = st.columns(2)
                 
+                with col_stats_1:
+                    stats_basic = pd.DataFrame({
+                        "Metric": ["Max", "Min", "Mean", "Count (N)"],
+                        "Value": [plot_data.max(), plot_data.min(), round(mu, 3), n]
+                    })
+                    st.table(stats_basic)
+
+                with col_stats_2:
+                    stats_dispersion = pd.DataFrame({
+                        "Method": ["Standard Deviation (σ)", "Interquartile Range (IQR)", "Estimated σ (from IQR)"],
+                        "Value": [round(sigma, 3), round(iqr, 3), round(sigma_iqr, 3)]
+                    })
+                    st.table(stats_dispersion)
+
+                st.markdown("##### 🎯 Proposed Internal Control Limits")
                 comp_df = pd.DataFrame({
-                    "Loại giới hạn": ["Khách hàng (Spec)", "Nội bộ hiện tại (File)", "Đề xuất tối ưu (±3σ)"],
-                    "LSL": [cust_lsl, int_lsl, round(lcl_3s, 1)],
-                    "USL": [cust_usl, int_usl, round(ucl_3s, 1)]
+                    "Loại giới hạn": ["Khách hàng (Spec)", "Nội bộ hiện tại (File)", "Đề xuất tối ưu (±3σ Std)", "Đề xuất tối ưu (±3σ IQR)"],
+                    "LSL": [cust_lsl, int_lsl, round(mu - 3*sigma, 1), round(mu - 3*sigma_iqr, 1)],
+                    "USL": [cust_usl, int_usl, round(mu + 3*sigma, 1), round(mu + 3*sigma_iqr, 1)]
                 })
                 st.table(comp_df)
+                
                 st.markdown("---")
 
-                # Biểu đồ I-MR nằm dưới
+                # --- PHẦN 2: BIỂU ĐỒ I-MR (NẰM DƯỚI) ---
+                st.markdown("##### 📈 I-MR Charts")
                 mr = plot_data.diff().abs()
                 mr_ucl = mr.mean() * 3.267
                 fig_imr, (ax_i, ax_mr) = plt.subplots(2, 1, figsize=(12, 9), sharex=True)
-                ax_i.plot(plot_data, marker="o", color="#1f77b4"); ax_i.set_title("Individual Chart (I)")
-                ax_i.axhline(ucl_3s, color="red", ls="--"); ax_i.axhline(lcl_3s, color="red", ls="--")
-                ax_i.axhline(mu, color="green", ls="-"); apply_full_border(ax_i)
-                ax_mr.plot(mr, marker="o", color="#ff7f0e"); ax_mr.set_title("Moving Range Chart (MR)")
-                ax_mr.axhline(mr_ucl, color="red", ls="--"); apply_full_border(ax_mr)
+                
+                ax_i.plot(plot_data, marker="o", color="#1f77b4", markersize=5)
+                ax_i.axhline(ucl_3s, color="red", ls="--", label="UCL (Std)")
+                ax_i.axhline(lcl_3s, color="red", ls="--", label="LCL (Std)")
+                ax_i.axhline(mu, color="green", ls="-", label="Mean")
+                ax_i.set_title("Individual Chart (I)", weight="bold")
+                ax_i.legend(loc="upper left", bbox_to_anchor=(1, 1)); apply_full_border(ax_i)
+                
+                ax_mr.plot(mr, marker="o", color="#ff7f0e", markersize=5)
+                ax_mr.axhline(mr_ucl, color="red", ls="--", label="MR UCL")
+                ax_mr.axhline(mr.mean(), color="green", ls="-", label="Avg MR")
+                ax_mr.set_title("Moving Range Chart (MR)", weight="bold")
+                ax_mr.legend(loc="upper left", bbox_to_anchor=(1, 1)); apply_full_border(ax_mr)
+                
                 plt.tight_layout(); st.pyplot(fig_imr)
 
     except Exception as e:
         st.error(f"Lỗi: {e}")
 else:
-    st.info("👈 Mandy hãy tải file báo cáo lên.")
+    st.info("👈 Mandy hãy tải file lên để bắt đầu phân tích thống kê.")
