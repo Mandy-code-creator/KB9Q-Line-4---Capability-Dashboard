@@ -210,32 +210,82 @@ if uploaded_file:
             with tab2:
                 # --- CHART 3: SPC I-MR ---
                 st.subheader("III. Statistical Process Control (I-MR)")
+                
+                # Tính toán Moving Range (MR) và các giới hạn
                 mr = plot_data.diff().abs()
-                fig_imr = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, subplot_titles=("Individual Chart (I)", "Moving Range Chart (MR)"))
+                mr_mean = mr.mean()
+                mr_ucl = mr_mean * 3.267
+
+                # Tăng vertical_spacing lên 0.15 để tạo khoảng trống, không bị đè tiêu đề
+                fig_imr = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.15, 
+                                      subplot_titles=("Individual Chart (I)", "Moving Range Chart (MR)"))
                 
-                fig_imr.add_trace(go.Scatter(y=plot_data, mode='lines+markers', line=dict(color='#1F77B4')), row=1, col=1)
+                # -----------------------------
+                # 1. BIỂU ĐỒ INDIVIDUAL (I)
+                # -----------------------------
+                fig_imr.add_trace(go.Scatter(
+                    x=plot_data.index, y=plot_data, mode='lines+markers', 
+                    name='Data (I)', line=dict(color='#1F77B4', width=2), marker=dict(size=7, symbol='circle')
+                ), row=1, col=1)
                 
+                # Đánh dấu ĐỎ các điểm vượt giới hạn UCL / LCL của biểu đồ I
+                ooc_i = plot_data[(plot_data > ucl) | (plot_data < lcl)]
+                if not ooc_i.empty:
+                    fig_imr.add_trace(go.Scatter(
+                        x=ooc_i.index, y=ooc_i, mode='markers', name='OOC (I)',
+                        marker=dict(color='#D32F2F', size=9, symbol='circle', line=dict(color='white', width=1))
+                    ), row=1, col=1)
+
+                # -----------------------------
+                # 2. BIỂU ĐỒ MOVING RANGE (MR)
+                # -----------------------------
+                fig_imr.add_trace(go.Scatter(
+                    x=mr.index, y=mr, mode='lines+markers', 
+                    name='Data (MR)', line=dict(color='#1F77B4', width=2), marker=dict(size=7, symbol='circle')
+                ), row=2, col=1)
+
+                # Đánh dấu ĐỎ các điểm vượt giới hạn UCL của biểu đồ MR
+                ooc_mr = mr[mr > mr_ucl]
+                if not ooc_mr.empty:
+                    fig_imr.add_trace(go.Scatter(
+                        x=ooc_mr.index, y=ooc_mr, mode='markers', name='OOC (MR)',
+                        marker=dict(color='#D32F2F', size=9, symbol='circle', line=dict(color='white', width=1))
+                    ), row=2, col=1)
+
+                # -----------------------------
+                # Hàm vẽ đường giới hạn IN ĐẬM
+                # -----------------------------
                 def add_imr_hline(val, label, color, row):
                     if val is not None:
-                        fig_imr.add_hline(y=val, line_dash="dash", line_color=color, line_width=2,
-                                        annotation_text=f"{label}: {val:.1f}", annotation_position="top right",
-                                        annotation_font=dict(color=color), row=row, col=1)
+                        fig_imr.add_hline(
+                            y=val, line_dash="dash", line_color=color, line_width=2.5, opacity=1, # In đậm đường
+                            annotation_text=f"<b>{label}: {val:.1f}</b>", # In đậm chữ
+                            annotation_position="top right",
+                            annotation_font=dict(color=color, size=11),
+                            annotation_bgcolor="rgba(255,255,255,0.85)", 
+                            row=row, col=1
+                        )
 
-                add_imr_hline(ucl, 'UCL', 'red', 1)
-                add_imr_hline(lcl, 'LCL', 'red', 1)
-                add_imr_hline(mu, 'Mean', 'green', 1)
+                # Gọi hàm vẽ đường cho I-Chart
+                add_imr_hline(ucl, 'UCL', '#D32F2F', 1)
+                add_imr_hline(lcl, 'LCL', '#D32F2F', 1)
+                add_imr_hline(mu, 'Mean', '#2E7D32', 1)
                 
-                fig_imr.add_trace(go.Scatter(y=mr, mode='lines+markers', line=dict(color='#1F77B4')), row=2, col=1)
-                mr_mean = mr.mean()
-                add_imr_hline(mr_mean, 'MR Mean', 'green', 2)
-                add_imr_hline(mr_mean * 3.267, 'MR UCL', 'red', 2)
+                # Gọi hàm vẽ đường cho MR-Chart
+                add_imr_hline(mr_mean, 'MR Mean', '#2E7D32', 2)
+                add_imr_hline(mr_ucl, 'MR UCL', '#D32F2F', 2)
 
-                fig_imr.update_layout(height=700, template="simple_white", showlegend=False)
+                # -----------------------------
+                # CẬP NHẬT GIAO DIỆN CHUNG
+                # -----------------------------
+                # Thêm margin r=80 (phải) để không bị cắt chữ, t=60 (trên) để thoáng
+                fig_imr.update_layout(height=700, template="simple_white", showlegend=False, margin=dict(l=40, r=80, t=60, b=40))
+                
+                # Vòng lặp nhỏ này giúp đẩy Tiêu đề (Subplot titles) lên cao một chút để không đè vào khung
+                for annotation in fig_imr['layout']['annotations']:
+                    annotation['y'] += 0.02 
+
                 fig_imr.update_xaxes(showline=True, linewidth=1.5, linecolor='black', mirror=True)
                 fig_imr.update_yaxes(showline=True, linewidth=1.5, linecolor='black', mirror=True)
+                
                 st.plotly_chart(fig_imr, use_container_width=True, config=export_config)
-
-    except Exception as e:
-        st.error(f"Đã xảy ra lỗi trong quá trình xử lý: {e}")
-else:
-    st.info("👈 Please upload the production data report (Excel/CSV) to begin.")
