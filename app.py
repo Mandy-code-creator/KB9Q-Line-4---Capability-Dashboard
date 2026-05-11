@@ -8,7 +8,7 @@ import re
 import math
 
 # --- 1. CẤU HÌNH GIAO DIỆN CHUẨN EXECUTIVE DASHBOARD ---
-st.set_page_config(page_title="Line 4 Quality Analytics Dashboard", layout="wide")
+st.set_page_config(page_title="Line 4 Quality Analytics", layout="wide")
 
 st.markdown("""
     <style>
@@ -16,7 +16,7 @@ st.markdown("""
     
     div.stPlotlyChart {
         background-color: #ffffff;
-        padding: 25px;
+        padding: 20px;
         border-radius: 12px;
         border: 1px solid #e1e4e8;
         box-shadow: 0 4px 12px rgba(0,0,0,0.05);
@@ -39,7 +39,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. HÀM XỬ LÝ DỮ LIỆU THÔNG MINH ---
+# --- 2. HÀM XỬ LÝ DỮ LIỆU ---
 def find_data_col(df, key):
     for col in df.columns:
         if re.search(key, col, re.IGNORECASE) and not any(kw in col for kw in ["管制", "規格", "要求"]):
@@ -52,6 +52,19 @@ def get_valid_limit(df, keyword, limit_type, category):
         val = pd.to_numeric(df[col], errors='coerce').median()
         return float(val) if pd.notnull(val) and val > 0 else None
     return None
+
+# --- CẤU HÌNH XUẤT ẢNH CHO WORD (HIGH RESOLUTION) ---
+export_config = {
+    'displayModeBar': True, # Hiển thị thanh công cụ
+    'displaylogo': False,   # Tắt logo Plotly
+    'toImageButtonOptions': {
+        'format': 'png', 
+        'filename': 'Bieu_do_Line4',
+        'height': 600,
+        'width': 1200,
+        'scale': 2 # Nhân đôi độ phân giải để chèn Word cực nét
+    }
+}
 
 # --- 3. THANH BÊN (SIDEBAR) ---
 st.sidebar.header("📂 HỆ THỐNG DỮ LIỆU")
@@ -73,7 +86,7 @@ if uploaded_file:
         available = [k for k, v in metrics_map.items() if find_data_col(df, v)]
         
         if not available:
-            st.error("❌ Không tìm thấy các cột dữ liệu YS, TS, EL... phù hợp.")
+            st.error("❌ Không tìm thấy các cột dữ liệu phù hợp.")
             st.stop()
 
         selected_label = st.sidebar.selectbox("Thông số phân tích:", available)
@@ -94,6 +107,7 @@ if uploaded_file:
             ucl, lcl = mu + 3*sigma, mu - 3*sigma
 
             st.title(f"LINE 4 ANALYTICS: {selected_label}")
+            st.caption("💡 Mẹo: Rê chuột vào góc phải biểu đồ, nhấn biểu tượng 📷 (Camera) để tải ảnh sắc nét chèn vào Word.")
 
             # KHỐI KPI
             k1, k2, k3, k4 = st.columns(4)
@@ -119,7 +133,11 @@ if uploaded_file:
                 pts = [plot_data.min(), plot_data.max()]
                 all_lims = [v for v in [v_lsl_cust, v_usl_cust, v_lsl_int, v_usl_int, lcl, ucl] if v]
                 pts.extend(all_lims)
-                x_range = [min(pts) * 0.98, max(pts) * 1.02]
+                
+                # Tính toán không gian (padding) an toàn 8% để chữ không bị cắt
+                min_pt, max_pt = min(pts), max(pts)
+                pad = (max_pt - min_pt) * 0.08 if max_pt != min_pt else max_pt * 0.05
+                x_range = [min_pt - pad, max_pt + pad]
 
                 fig_dist = go.Figure()
                 fig_dist.add_trace(go.Histogram(x=plot_data, nbinsx=k_bins, marker_color='#3498db', opacity=0.7))
@@ -130,7 +148,6 @@ if uploaded_file:
                     y_c = norm.pdf(x_c, mu, sigma) * n * bin_w
                     fig_dist.add_trace(go.Scatter(x=x_c, y=y_c, mode='lines', line=dict(color='#113763', width=3)))
 
-                # MÀU TƯƠNG PHẢN CAO CHO HISTOGRAM
                 limit_hist = [
                     (v_lsl_cust, "KHÁCH MIN", "#FF0000", "dash"),
                     (v_usl_cust, "KHÁCH MAX", "#FF0000", "dash"),
@@ -140,7 +157,6 @@ if uploaded_file:
                 for v, lbl, clr, sty in limit_hist:
                     if v:
                         fig_dist.add_vline(x=v, line_dash=sty, line_color=clr, line_width=2.5)
-                        # ĐÓNG KHUNG NHÃN CHỮ
                         fig_dist.add_annotation(
                             x=v, y=0.95, yref="paper", 
                             text=f"<b>{lbl}: {v}</b>", 
@@ -150,9 +166,13 @@ if uploaded_file:
                             showarrow=False
                         )
 
+                # Thêm lề phải r=80 để chứa khung chữ dọc
                 fig_dist.update_layout(template="simple_white", height=450, xaxis_range=x_range, showlegend=False, 
+                                      margin=dict(l=50, r=80, t=30, b=50),
                                       yaxis_title="Số lượng cuộn thép (Coils)", xaxis_title=f"Giá trị {selected_label}")
-                st.plotly_chart(fig_dist, use_container_width=True)
+                
+                # Gọi config để tải ảnh nét
+                st.plotly_chart(fig_dist, use_container_width=True, config=export_config)
 
                 # --- BIỂU ĐỒ 2: TRENDING ---
                 st.subheader("II. Xu hướng sản xuất & Các tầng giới hạn")
@@ -161,7 +181,6 @@ if uploaded_file:
                                               line=dict(color='#3498db', width=2),
                                               marker=dict(size=7, color='white', line=dict(width=2, color='#3498db'))))
 
-                # MÀU TƯƠNG PHẢN CAO CHO TRENDING
                 trend_lines = [
                     (mu, "MEAN", "#27AE60", "solid", 1.02),
                     (ucl, "UCL", "#D35400", "dash", 1.02),
@@ -175,7 +194,6 @@ if uploaded_file:
                 for v, lbl, clr, sty, pos in trend_lines:
                     if v:
                         fig_trend.add_hline(y=v, line_dash=sty, line_color=clr, line_width=2)
-                        # ĐÓNG KHUNG NHÃN CHỮ BÊN PHẢI
                         fig_trend.add_annotation(
                             x=pos, y=v, xref="paper", 
                             text=f"<b>{lbl}: {v:.1f}</b>",
@@ -185,9 +203,12 @@ if uploaded_file:
                             xanchor="left"
                         )
 
-                fig_trend.update_layout(template="simple_white", height=500, margin=dict(r=260), showlegend=False,
+                # Nới lề phải lên r=280 để chữ không bao giờ bị cắt
+                fig_trend.update_layout(template="simple_white", height=500, margin=dict(l=50, r=280, t=30, b=50), showlegend=False,
                                        xaxis_title="Thứ tự cuộn (Sequence)", yaxis_title="Giá trị đo thực tế")
-                st.plotly_chart(fig_trend, use_container_width=True)
+                
+                # Gọi config để tải ảnh nét
+                st.plotly_chart(fig_trend, use_container_width=True, config=export_config)
 
             else:
                 st.subheader("Biểu đồ kiểm soát SPC I-MR")
@@ -199,7 +220,8 @@ if uploaded_file:
                 fig_imr.add_hline(y=mu, line_color="green", row=1, col=1)
                 fig_imr.add_trace(go.Scatter(y=mr, mode='lines+markers', line=dict(color='orange')), row=2, col=1)
                 fig_imr.update_layout(height=750, template="simple_white", showlegend=False)
-                st.plotly_chart(fig_imr, use_container_width=True)
+                
+                st.plotly_chart(fig_imr, use_container_width=True, config=export_config)
 
     except Exception as e:
         st.error(f"Lỗi hệ thống: {e}")
