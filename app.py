@@ -74,10 +74,8 @@ if uploaded_file:
         available = [k for k, v in metrics_map.items() if find_data_col(df, v)]
         if not available: st.stop()
 
-        # VIEW MODE SELECTION
         view_mode = st.sidebar.radio("View Mode:", ["Process Analytics", "SPC Control Charts (I-MR)", "Executive Summary"])
         
-        # LOGIC FOR SINGLE PARAMETER VIEWS (1 & 2)
         if view_mode != "Executive Summary":
             selected_label = st.sidebar.selectbox("Select Parameter:", available)
             short_key = metrics_map[selected_label]
@@ -106,10 +104,10 @@ if uploaded_file:
                         fig_t, ax_t = plt.subplots(figsize=(12, 6))
                         ax_t.plot(np.arange(1, n+1), plot_data, marker="o", markersize=6, color="#1f77b4", label="Actual Value")
                         ax_t.axhline(mu, color="blue", ls="-", lw=2, label=f"Mean: {mu:.1f}")
-                        if cust_lsl: ax_t.axhline(cust_lsl, color="green", ls="-", lw=3, label=f"Cust LSL")
-                        if cust_usl: ax_t.axhline(cust_usl, color="green", ls="-", lw=3, label=f"Cust USL")
-                        if int_lsl: ax_t.axhline(int_lsl, color="red", ls="--", lw=3, label=f"Int LSL")
-                        if int_usl: ax_t.axhline(int_usl, color="red", ls="--", lw=3, label=f"Int USL")
+                        if cust_lsl: ax_t.axhline(cust_lsl, color="green", ls="-", lw=3, label="Cust LSL")
+                        if cust_usl: ax_t.axhline(cust_usl, color="green", ls="-", lw=3, label="Cust USL")
+                        if int_lsl: ax_t.axhline(int_lsl, color="red", ls="--", lw=3, label="Int LSL")
+                        if int_usl: ax_t.axhline(int_usl, color="red", ls="--", lw=3, label="Int USL")
                         ax_t.axhline(ucl_v1, color="#ff7f0e", ls=":", lw=3, label="3σ UCL")
                         ax_t.axhline(lcl_v1, color="#ff7f0e", ls=":", lw=3, label="3σ LCL")
                         ax_t.set_xlabel("Coil Sequence")
@@ -172,20 +170,27 @@ if uploaded_file:
 
                     fig_imr, ax_i = plt.subplots(figsize=(12, 6))
                     ax_i.plot(plot_data, marker="o", color="#1f77b4", label="Actual Data", alpha=0.7)
-                    ax_i.axhline(mu, color="blue", ls="-", lw=2, label=f"Mean")
+                    ax_i.axhline(mu, color="blue", ls="-", lw=2, label="Mean")
+                    
+                    # BỔ SUNG: Hiển thị giới hạn nội bộ hiện tại trong View 2
+                    if int_lsl: ax_i.axhline(int_lsl, color="red", ls="--", lw=2, label="Current Int LSL")
+                    if int_usl: ax_i.axhline(int_usl, color="red", ls="--", lw=2, label="Current Int USL")
+                    
                     if cust_lsl: ax_i.axhline(cust_lsl, color="green", ls="-", lw=2.5, label="Cust LSL")
                     if cust_usl: ax_i.axhline(cust_usl, color="green", ls="-", lw=2.5, label="Cust USL")
+                    
                     ax_i.axhline(mu + k_std*sigma_fixed, color="darkred", ls="-", label=f"Prop USL ({k_std}σ)")
                     ax_i.axhline(mu - k_std*sigma_fixed, color="darkred", ls="-", label=f"Prop LSL ({k_std}σ)")
                     ax_i.axhline(mu + k_iqr*s_iqr, color="darkorange", ls="--", label=f"Prop USL (IQR {k_iqr}k)")
                     ax_i.axhline(mu - k_iqr*s_iqr, color="darkorange", ls="--", label=f"Prop LSL (IQR {k_iqr}k)")
+                    
+                    ax_i.set_xlabel("Coil Sequence")
+                    ax_i.set_ylabel(f"{selected_label} Value")
                     ax_i.set_title(f"I-Chart: Optimization Comparison (N={n})")
                     ax_i.legend(loc="upper left", bbox_to_anchor=(1, 1))
                     apply_full_border(ax_i); plt.tight_layout(); st.pyplot(fig_imr)
 
-        # ==========================================
-        # VIEW 3: EXECUTIVE SUMMARY (TÁCH BIỆT HOÀN TOÀN)
-        # ==========================================
+        # VIEW 3: EXECUTIVE SUMMARY
         elif view_mode == "Executive Summary":
             st.title("📑 Executive Quality Summary")
             summary_data = []
@@ -199,19 +204,16 @@ if uploaded_file:
                 if data_col:
                     p_data = pd.to_numeric(df[data_col], errors='coerce').dropna()
                     if len(p_data) == 0: continue
-                    
                     mu_v, sig_v = p_data.mean(), p_data.std(ddof=1)
                     i_lsl = get_limit(df, zh_key, "min", "管制")
                     i_usl = get_limit(df, zh_key, "max", "管制")
                     
                     cp, ca, cpk, formula, status = "-", "-", "-", "-", "N/A"
                     cpk_val = None
-                    
                     if sig_v > 0:
                         if i_usl is not None and i_lsl is not None:
                             cp_val = (i_usl - i_lsl) / (6 * sig_v)
-                            center = (i_usl + i_lsl) / 2
-                            half_t = (i_usl - i_lsl) / 2
+                            center, half_t = (i_usl + i_lsl) / 2, (i_usl - i_lsl) / 2
                             ca_val = (mu_v - center) / half_t
                             cpk_val = cp_val * (1 - abs(ca_val))
                             cp, ca, cpk = format_num(cp_val), f"{ca_val*100:.1f}%", format_num(cpk_val)
@@ -222,7 +224,6 @@ if uploaded_file:
                         elif i_lsl is not None:
                             cpk_val = (mu_v - i_lsl) / (3 * sig_v)
                             cpk, formula = format_num(cpk_val), "Cpl"
-                            
                         if cpk_val is not None:
                             status = "🟢 Excellent" if cpk_val >= 1.33 else ("🟡 Acceptable" if cpk_val >= 1.0 else "🔴 Action Required")
                     
