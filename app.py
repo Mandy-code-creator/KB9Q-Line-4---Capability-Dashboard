@@ -127,8 +127,6 @@ if uploaded_file:
                     ax_d.set_ylabel("Coil Count", weight="bold")
                     
                     ax_pdf = ax_d.twinx()
-                    
-                    # BẢN FIX: Kéo dài đuôi của đường Normal Curve (Tối thiểu ±4 Sigma)
                     x_min_fit = min(plot_data.min(), mu - 4 * sigma_fixed)
                     x_max_fit = max(plot_data.max(), mu + 4 * sigma_fixed)
                     pad_x = (x_max_fit - x_min_fit) * 0.05
@@ -157,36 +155,40 @@ if uploaded_file:
                     apply_full_border(ax_d); plt.tight_layout(); st.pyplot(fig_d)
 
             # ==========================================
-            # VIEW 2: SPC & OPTIMIZATION
+            # VIEW 2: SPC & OPTIMIZATION (TÁCH BIỆT K & SIGMA)
             # ==========================================
             else:
                 st.subheader("II. Control Limit Optimization & I-MR")
-                st.markdown("##### ⚙️ Parameters")
+                
+                st.markdown("##### ⚙️ Optimization Parameters")
                 c_i1, c_i2 = st.columns(2)
                 with c_i1:
-                    k_val = st.number_input("Target k-factor:", 1.0, 6.0, 3.0, 0.1)
+                    # Hệ số nhân dành riêng cho StdDev
+                    k_std = st.number_input("Target Multiplier for StdDev (Sigma):", 1.0, 6.0, 3.0, 0.1)
                 with c_i2:
-                    m_sigma = st.number_input("Target Sigma (0=auto):", 0.0, 100.0, 0.0, 0.1)
+                    # Hệ số nhân dành riêng cho IQR
+                    k_iqr = st.number_input("Target Multiplier for IQR (k-factor):", 1.0, 6.0, 3.0, 0.1)
                 
-                s_used = sigma_fixed if m_sigma == 0 else m_sigma
                 q1, q3 = plot_data.quantile(0.25), plot_data.quantile(0.75)
                 s_iqr = (q3 - q1) / 1.349
 
                 st.markdown("##### 🎯 Comparative Analysis")
                 col_res1, col_res2 = st.columns(2)
+                
                 with col_res1:
                     st.write("**Method: Standard Deviation**")
                     st.table(pd.DataFrame({
                         "Metric": ["Mean", "Sigma (σ)", "LSL", "USL"],
-                        "Value": [format_num(mu), format_num(sigma_fixed), format_num(mu - k_val*sigma_fixed), format_num(mu + k_val*sigma_fixed)],
-                        "Formula": ["Sum/N", "StdDev", f"Mean-({k_val}*σ)", f"Mean+({k_val}*σ)"]
+                        "Value": [format_num(mu), format_num(sigma_fixed), format_num(mu - k_std*sigma_fixed), format_num(mu + k_std*sigma_fixed)],
+                        "Formula": ["Sum/N", "StdDev", f"Mean-({k_std}*σ)", f"Mean+({k_std}*σ)"]
                     }))
+                    
                 with col_res2:
                     st.write("**Method: IQR (Robust)**")
                     st.table(pd.DataFrame({
                         "Metric": ["Mean", "Sigma_iqr", "LSL", "USL"],
-                        "Value": [format_num(mu), format_num(s_iqr), format_num(mu - k_val*s_iqr), format_num(mu + k_val*s_iqr)],
-                        "Formula": ["Sum/N", "IQR/1.349", f"Mean-({k_val}*σ_i)", f"Mean+({k_val}*σ_i)"]
+                        "Value": [format_num(mu), format_num(s_iqr), format_num(mu - k_iqr*s_iqr), format_num(mu + k_iqr*s_iqr)],
+                        "Formula": ["Sum/N", "IQR/1.349", f"Mean-({k_iqr}*σ_i)", f"Mean+({k_iqr}*σ_i)"]
                     }))
 
                 st.markdown("---")
@@ -196,12 +198,18 @@ if uploaded_file:
                 
                 if int_lsl: ax_i.axhline(int_lsl, color="red", ls="--", label="Current Int LSL")
                 if int_usl: ax_i.axhline(int_usl, color="red", ls="--", label="Current Int USL")
-                ax_i.axhline(mu + k_val*s_used, color="darkred", ls="-", lw=2, label=f"Proposed USL ({k_val}σ)")
-                ax_i.axhline(mu - k_val*s_used, color="darkred", ls="-", lw=2, label=f"Proposed LSL ({k_val}σ)")
+                
+                # Vẽ giới hạn đề xuất của StdDev (Đỏ sẫm)
+                ax_i.axhline(mu + k_std*sigma_fixed, color="darkred", ls="-", lw=2, label=f"Proposed USL (StdDev {k_std}σ)")
+                ax_i.axhline(mu - k_std*sigma_fixed, color="darkred", ls="-", lw=2, label=f"Proposed LSL (StdDev {k_std}σ)")
+                
+                # Vẽ giới hạn đề xuất của IQR (Cam)
+                ax_i.axhline(mu + k_iqr*s_iqr, color="darkorange", ls="--", lw=2, label=f"Proposed USL (IQR {k_iqr}σ)")
+                ax_i.axhline(mu - k_iqr*s_iqr, color="darkorange", ls="--", lw=2, label=f"Proposed LSL (IQR {k_iqr}σ)")
                 
                 ax_i.set_xlabel("Coil Sequence", weight="bold")
                 ax_i.set_ylabel(f"{selected_label} Value", weight="bold")
-                ax_i.set_title(f"I-Chart: Comparison (N={n})", weight="bold")
+                ax_i.set_title(f"I-Chart: Optimization Comparison (N={n})", weight="bold")
                 ax_i.legend(loc="upper left", bbox_to_anchor=(1, 1))
                 apply_full_border(ax_i); plt.tight_layout(); st.pyplot(fig_imr)
 
