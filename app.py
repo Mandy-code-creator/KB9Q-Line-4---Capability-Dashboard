@@ -45,7 +45,7 @@ def get_limit(df, keyword, limit_type, category):
     return None
 
 def apply_full_border(ax):
-    """Ép khung viền đen đậm kín 4 cạnh"""
+    """Ép khung viền đen đậm kín 4 cạnh để không bị mất cạnh số 4"""
     for spine in ax.spines.values():
         spine.set_linewidth(2.5)
         spine.set_color('black')
@@ -81,7 +81,6 @@ if uploaded_file:
         zh_map = {"YS": "降伏強度", "TS": "抗拉強度", "EL": "伸長率", "HRB": "硬度", "YPE": "YPE"}
         zh_key = zh_map.get(short_key, short_key)
         
-        # Lấy các tầng giới hạn
         int_lsl = get_limit(df, zh_key, "min", "管制")
         int_usl = get_limit(df, zh_key, "max", "管制")
         cust_lsl = get_limit(df, zh_key, "min", "客戶要求")
@@ -103,7 +102,6 @@ if uploaded_file:
                     fig_t, ax_t = plt.subplots(figsize=(12, 6))
                     ax_t.plot(x_idx, plot_data, marker="o", markersize=6, label="Actual Value", color="#1f77b4", zorder=1)
                     
-                    # Highlight điểm vượt giới hạn NỘI BỘ
                     out_mask = pd.Series([False] * n)
                     if int_usl: out_mask |= (plot_data > int_usl)
                     if int_lsl: out_mask |= (plot_data < int_lsl)
@@ -111,7 +109,6 @@ if uploaded_file:
                         ax_t.scatter(x_idx[out_mask], plot_data[out_mask], color='red', s=120, 
                                     label="Out of Internal Spec", edgecolor='black', linewidth=1.5, zorder=3)
 
-                    # Vẽ đường giới hạn Trend
                     if cust_lsl: ax_t.axhline(cust_lsl, color="green", linestyle="-", linewidth=3, label=f"Cust LSL: {cust_lsl:.1f}")
                     if cust_usl: ax_t.axhline(cust_usl, color="green", linestyle="-", linewidth=3, label=f"Cust USL: {cust_usl:.1f}")
                     if int_lsl: ax_t.axhline(int_lsl, color="red", linestyle="--", linewidth=3, label=f"Int LSL: {int_lsl:.1f}")
@@ -127,7 +124,6 @@ if uploaded_file:
                     st.pyplot(fig_t)
 
                 with tab_dist:
-                    # Tính SPC dựa trên Giới hạn NỘI BỘ
                     cp, ca, cpk = 0.0, 0.0, 0.0
                     if sigma > 0 and int_usl and int_lsl:
                         cp = (int_usl - int_lsl) / (6 * sigma)
@@ -137,31 +133,33 @@ if uploaded_file:
                         cpk = min(cpu, cpl)
 
                     fig_d, ax_d = plt.subplots(figsize=(12, 6))
-                    ax_d.hist(plot_data, bins=20, density=True, alpha=0.5, color="#7FB3D5", edgecolor="black")
+                    ax_d.hist(plot_data, bins=20, density=True, alpha=0.4, color="#7FB3D5", edgecolor="black")
                     xs = np.linspace(plot_data.min()*0.9, plot_data.max()*1.1, 500)
                     ax_d.plot(xs, norm.pdf(xs, mu, sigma), color="#1E3A8A", linewidth=3, label="Normal Fit")
                     
-                    # Hàm hiển thị vline kèm giá trị số
-                    def add_vline_with_value(ax, val, color, ls, label):
-                        if val:
+                    # LOGIC NHÃN BẬC THANG: Tránh ghi đè khi các giới hạn trùng nhau
+                    def add_vline_with_stepped_value(ax, val, color, ls, label, level=1):
+                        if val is not None:
                             ax.axvline(val, color=color, linestyle=ls, linewidth=3, label=label)
-                            ax.text(val, ax.get_ylim()[1] * 1.01, f"{val:.1f}", 
-                                    color=color, ha='center', va='bottom', fontsize=11, fontweight='bold')
+                            y_max = ax.get_ylim()[1]
+                            # Tầng 1: sát khung, Tầng 2: cao hơn 5%, Tầng 3: cao hơn 10%
+                            y_pos = y_max * (1 + (level - 1) * 0.06)
+                            ax.text(val, y_pos, f"{val:.1f}", color=color, ha='center', va='bottom', 
+                                    fontsize=11, fontweight='bold')
 
-                    add_vline_with_value(ax_d, cust_lsl, "green", "-", "Cust LSL")
-                    add_vline_with_value(ax_d, cust_usl, "green", "-", "Cust USL")
-                    add_vline_with_value(ax_d, int_lsl, "red", "--", "Int LSL")
-                    add_vline_with_value(ax_d, int_usl, "red", "--", "Int USL")
-                    add_vline_with_value(ax_d, ucl_3s, "#ff7f0e", ":", "3σ UCL")
-                    add_vline_with_value(ax_d, lcl_3s, "#ff7f0e", ":", "3σ LCL")
+                    add_vline_with_stepped_value(ax_d, cust_lsl, "green", "-", "Cust LSL", level=1)
+                    add_vline_with_stepped_value(ax_d, cust_usl, "green", "-", "Cust USL", level=1)
+                    add_vline_with_stepped_value(ax_d, int_lsl, "red", "--", "Int LSL", level=2)
+                    add_vline_with_stepped_value(ax_d, int_usl, "red", "--", "Int USL", level=2)
+                    add_vline_with_stepped_value(ax_d, ucl_3s, "#ff7f0e", ":", "3σ UCL", level=3)
+                    add_vline_with_stepped_value(ax_d, lcl_3s, "#ff7f0e", ":", "3σ LCL", level=3)
 
-                    ax_d.set_title(f"{selected_label} Distribution & Capability", pad=35)
+                    ax_d.set_title(f"{selected_label} Distribution & Capability", pad=65)
                     ax_d.legend(loc="upper left", bbox_to_anchor=(1, 1))
                     apply_full_border(ax_d)
                     plt.tight_layout()
                     st.pyplot(fig_d)
 
-                    # Bảng SPC Rating
                     rating = "Excellent" if cpk >= 1.33 else ("Good" if cpk >= 1.0 else "Poor")
                     color_code = "green" if cpk >= 1.33 else ("orange" if cpk >= 1.0 else "red")
                     df_spc = pd.DataFrame([{"N": n, "Mean": mu, "Std": sigma, "Cp": cp, "Ca (%)": ca, "Cpk": cpk, "Rating": rating}])
