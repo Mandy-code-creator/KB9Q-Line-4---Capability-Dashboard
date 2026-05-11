@@ -94,7 +94,7 @@ if uploaded_file:
             st.title(f"📊 Quality Analytics: {selected_label}")
 
             # ==========================================
-            # VIEW 1: PROCESS ANALYTICS (GIỮ NGUYÊN & HIỆN LABEL)
+            # VIEW 1: PROCESS ANALYTICS
             # ==========================================
             if view_mode == "Process Analytics":
                 tab_trend, tab_dist = st.tabs(["📈 Trend Analysis", "📊 Distribution & SPC"])
@@ -102,7 +102,7 @@ if uploaded_file:
 
                 with tab_trend:
                     fig_t, ax_t = plt.subplots(figsize=(12, 6))
-                    ax_t.plot(np.arange(1, n+1), plot_data, marker="o", markersize=6, color="#1f77b4", zorder=1, label="Actual Value")
+                    ax_t.plot(np.arange(1, n+1), plot_data, marker="o", markersize=6, color="#1f77b4", label="Actual Value")
                     if cust_lsl: ax_t.axhline(cust_lsl, color="green", ls="-", lw=3, label=f"Cust LSL: {cust_lsl:.1f}")
                     if cust_usl: ax_t.axhline(cust_usl, color="green", ls="-", lw=3, label=f"Cust USL: {cust_usl:.1f}")
                     if int_lsl: ax_t.axhline(int_lsl, color="red", ls="--", lw=3, label=f"Int LSL: {int_lsl:.1f}")
@@ -115,17 +115,18 @@ if uploaded_file:
 
                 with tab_dist:
                     fig_d, ax_d = plt.subplots(figsize=(12, 6))
-                    ax_d.hist(plot_data, bins=20, density=True, alpha=0.5, color="#7FB3D5", edgecolor="black")
+                    ax_d.hist(plot_data, bins=20, density=True, alpha=0.4, color="#7FB3D5", edgecolor="black")
                     xs = np.linspace(plot_data.min()*0.9, plot_data.max()*1.1, 500)
                     ax_d.plot(xs, norm.pdf(xs, mu, sigma_fixed), color="#1E3A8A", lw=3, label="Normal Fit")
                     
-                    # CẬP NHẬT: Thêm Label vào hàm vẽ vline
                     def add_vline_std(ax, val, color, ls, label, level=1):
                         if val is not None:
                             ax.axvline(val, color=color, linestyle=ls, linewidth=3, label=label)
                             y_pos = ax.get_ylim()[1] * (1 + (level - 1) * 0.06)
                             ax.text(val, y_pos, f"{val:.1f}", color=color, ha='center', va='bottom', fontweight='bold')
                     
+                    # Thêm đường MEAN vào biểu đồ phân phối
+                    add_vline_std(ax_d, mu, "blue", "-", "Mean", 0)
                     add_vline_std(ax_d, cust_lsl, "green", "-", "Cust LSL", 1)
                     add_vline_std(ax_d, cust_usl, "green", "-", "Cust USL", 1)
                     add_vline_std(ax_d, int_lsl, "red", "--", "Int LSL", 2)
@@ -134,7 +135,6 @@ if uploaded_file:
                     add_vline_std(ax_d, lcl_v1, "#ff7f0e", ":", "3σ LCL", 3)
                     
                     ax_d.set_title(f"{selected_label} Distribution & Capability", pad=65)
-                    # HIỆN BẢNG CHÚ THÍCH (Legend) cho View 1
                     ax_d.legend(loc="upper left", bbox_to_anchor=(1, 1))
                     apply_full_border(ax_d); plt.tight_layout(); st.pyplot(fig_d)
 
@@ -150,38 +150,36 @@ if uploaded_file:
                 with c_i2:
                     m_sigma = st.number_input("Target Sigma (σ) (0 = auto):", 0.0, 100.0, 0.0, 0.1)
                 
-                s_std = sigma_fixed
+                s_used = sigma_fixed if m_sigma == 0 else m_sigma
                 q1, q3 = plot_data.quantile(0.25), plot_data.quantile(0.75)
                 s_iqr = (q3 - q1) / 1.349
-                s_used = s_std if m_sigma == 0 else m_sigma
 
                 st.markdown("##### 🎯 Step-by-Step Calculation")
                 col_t1, col_t2 = st.columns(2)
                 with col_t1:
                     st.write("**Method 1: Standard Deviation**")
-                    df_std = pd.DataFrame({
+                    st.table(pd.DataFrame({
                         "Metric": ["Mean", "Sigma (σ)", "LSL", "USL"],
-                        "Value": [format_num(mu), format_num(s_std), format_num(mu - k_val*s_std), format_num(mu + k_val*s_std)],
-                        "Formula": ["Sum / N", "StdDev Formula", f"Mean - ({k_val} * σ)", f"Mean + ({k_val} * σ)"]
-                    })
-                    st.table(df_std)
+                        "Value": [format_num(mu), format_num(sigma_fixed), format_num(mu - k_val*sigma_fixed), format_num(mu + k_val*sigma_fixed)],
+                        "Formula": ["Sum / N", "StdDev", f"Mean - ({k_val}*σ)", f"Mean + ({k_val}*σ)"]
+                    }))
                 with col_t2:
                     st.write("**Method 2: IQR (Robust)**")
-                    df_iqr = pd.DataFrame({
-                        "Metric": ["Mean", "Sigma IQR (σ_iqr)", "LSL", "USL"],
+                    st.table(pd.DataFrame({
+                        "Metric": ["Mean", "Sigma IQR", "LSL", "USL"],
                         "Value": [format_num(mu), format_num(s_iqr), format_num(mu - k_val*s_iqr), format_num(mu + k_val*s_iqr)],
-                        "Formula": ["Sum / N", "IQR / 1.349", f"Mean - ({k_val} * σ_iqr)", f"Mean + ({k_val} * σ_iqr)"]
-                    })
-                    st.table(df_iqr)
+                        "Formula": ["Sum / N", "IQR / 1.349", f"Mean - ({k_val}*σ_iqr)", f"Mean + ({k_val}*σ_iqr)"]
+                    }))
 
                 st.markdown("---")
                 fig_imr, ax_i = plt.subplots(figsize=(12, 6))
                 ax_i.plot(plot_data, marker="o", color="#1f77b4", label="Actual Data", alpha=0.7)
+                ax_i.axhline(mu, color="blue", ls="-", lw=2, label=f"Mean: {mu:.1f}")
                 if int_lsl: ax_i.axhline(int_lsl, color="red", ls="--", label="Current LSL (File)")
                 if int_usl: ax_i.axhline(int_usl, color="red", ls="--", label="Current USL (File)")
                 ax_i.axhline(mu + k_val*s_used, color="darkred", ls="-", lw=2, label=f"Proposed USL ({k_val}σ)")
                 ax_i.axhline(mu - k_val*s_used, color="darkred", ls="-", lw=2, label=f"Proposed LSL ({k_val}σ)")
-                ax_i.set_title("I-Chart: Current vs Proposed Limits", weight="bold")
+                ax_i.set_title("I-Chart: Optimization Comparison", weight="bold")
                 ax_i.legend(loc="upper left", bbox_to_anchor=(1, 1))
                 apply_full_border(ax_i); plt.tight_layout(); st.pyplot(fig_imr)
 
