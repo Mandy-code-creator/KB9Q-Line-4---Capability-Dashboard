@@ -94,7 +94,7 @@ if uploaded_file:
             st.title(f"📊 Quality Analytics: {selected_label}")
 
             # ==========================================
-            # VIEW 1: PROCESS ANALYTICS (GIỮ NGUYÊN HOÀN TOÀN)
+            # VIEW 1: PROCESS ANALYTICS (GIỮ NGUYÊN & HIỆN LABEL)
             # ==========================================
             if view_mode == "Process Analytics":
                 tab_trend, tab_dist = st.tabs(["📈 Trend Analysis", "📊 Distribution & SPC"])
@@ -102,7 +102,7 @@ if uploaded_file:
 
                 with tab_trend:
                     fig_t, ax_t = plt.subplots(figsize=(12, 6))
-                    ax_t.plot(np.arange(1, n+1), plot_data, marker="o", markersize=6, color="#1f77b4", zorder=1)
+                    ax_t.plot(np.arange(1, n+1), plot_data, marker="o", markersize=6, color="#1f77b4", zorder=1, label="Actual Value")
                     if cust_lsl: ax_t.axhline(cust_lsl, color="green", ls="-", lw=3, label=f"Cust LSL: {cust_lsl:.1f}")
                     if cust_usl: ax_t.axhline(cust_usl, color="green", ls="-", lw=3, label=f"Cust USL: {cust_usl:.1f}")
                     if int_lsl: ax_t.axhline(int_lsl, color="red", ls="--", lw=3, label=f"Int LSL: {int_lsl:.1f}")
@@ -117,32 +117,36 @@ if uploaded_file:
                     fig_d, ax_d = plt.subplots(figsize=(12, 6))
                     ax_d.hist(plot_data, bins=20, density=True, alpha=0.5, color="#7FB3D5", edgecolor="black")
                     xs = np.linspace(plot_data.min()*0.9, plot_data.max()*1.1, 500)
-                    ax_d.plot(xs, norm.pdf(xs, mu, sigma_fixed), color="#1E3A8A", lw=3)
+                    ax_d.plot(xs, norm.pdf(xs, mu, sigma_fixed), color="#1E3A8A", lw=3, label="Normal Fit")
                     
-                    def add_vline_std(ax, val, color, ls, level=1):
+                    # CẬP NHẬT: Thêm Label vào hàm vẽ vline
+                    def add_vline_std(ax, val, color, ls, label, level=1):
                         if val is not None:
-                            ax.axvline(val, color=color, linestyle=ls, linewidth=3)
+                            ax.axvline(val, color=color, linestyle=ls, linewidth=3, label=label)
                             y_pos = ax.get_ylim()[1] * (1 + (level - 1) * 0.06)
                             ax.text(val, y_pos, f"{val:.1f}", color=color, ha='center', va='bottom', fontweight='bold')
                     
-                    add_vline_std(ax_d, cust_lsl, "green", "-", 1)
-                    add_vline_std(ax_d, cust_usl, "green", "-", 1)
-                    add_vline_std(ax_d, int_lsl, "red", "--", 2)
-                    add_vline_std(ax_d, int_usl, "red", "--", 2)
-                    add_vline_std(ax_d, ucl_v1, "#ff7f0e", ":", 3)
-                    add_vline_std(ax_d, lcl_v1, "#ff7f0e", ":", 3)
+                    add_vline_std(ax_d, cust_lsl, "green", "-", "Cust LSL", 1)
+                    add_vline_std(ax_d, cust_usl, "green", "-", "Cust USL", 1)
+                    add_vline_std(ax_d, int_lsl, "red", "--", "Int LSL", 2)
+                    add_vline_std(ax_d, int_usl, "red", "--", "Int USL", 2)
+                    add_vline_std(ax_d, ucl_v1, "#ff7f0e", ":", "3σ UCL", 3)
+                    add_vline_std(ax_d, lcl_v1, "#ff7f0e", ":", "3σ LCL", 3)
+                    
                     ax_d.set_title(f"{selected_label} Distribution & Capability", pad=65)
+                    # HIỆN BẢNG CHÚ THÍCH (Legend) cho View 1
+                    ax_d.legend(loc="upper left", bbox_to_anchor=(1, 1))
                     apply_full_border(ax_d); plt.tight_layout(); st.pyplot(fig_d)
 
             # ==========================================
-            # VIEW 2: SPC & OPTIMIZATION (GHI CHÚ BƯỚC TÍNH)
+            # VIEW 2: SPC & OPTIMIZATION
             # ==========================================
             else:
                 st.subheader("II. Control Limit Optimization")
                 st.markdown("##### ⚙️ Optimization Parameters")
                 c_i1, c_i2 = st.columns(2)
                 with c_i1:
-                    k_val = st.number_input("Input k-factor (e.g. 3):", 1.0, 6.0, 3.0, 0.1)
+                    k_val = st.number_input("Input k-factor:", 1.0, 6.0, 3.0, 0.1)
                 with c_i2:
                     m_sigma = st.number_input("Target Sigma (σ) (0 = auto):", 0.0, 100.0, 0.0, 0.1)
                 
