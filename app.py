@@ -208,11 +208,10 @@ if uploaded_file:
                     i_lsl = get_limit(df, zh_key, "min", "管制")
                     i_usl = get_limit(df, zh_key, "max", "管制")
                     
-                    cp, ca, cpk, status = "-", "-", "-", "N/A"
+                    cp, ca, cpk, cpk_formula, status = "-", "-", "-", "-", "N/A"
                     cpk_val = None
                     
                     if sig_v > 0:
-                        # TRƯỜNG HỢP CÓ ĐỦ 2 GIỚI HẠN
                         if i_usl is not None and i_lsl is not None:
                             cp_val = (i_usl - i_lsl) / (6 * sig_v)
                             cp = format_num(cp_val)
@@ -225,18 +224,18 @@ if uploaded_file:
                             cpu = (i_usl - mu_v) / (3 * sig_v)
                             cpl = (mu_v - i_lsl) / (3 * sig_v)
                             cpk_val = min(cpu, cpl)
+                            cpk_formula = "Min(Cpu, Cpl)" # Cập nhật công thức sử dụng
                         
-                        # TRƯỜNG HỢP CHỈ CÓ USL
                         elif i_usl is not None:
                             cpu = (i_usl - mu_v) / (3 * sig_v)
                             cpk_val = cpu
+                            cpk_formula = "Cpu" # Cập nhật công thức sử dụng
                         
-                        # TRƯỜNG HỢP CHỈ CÓ LSL
                         elif i_lsl is not None:
                             cpl = (mu_v - i_lsl) / (3 * sig_v)
                             cpk_val = cpl
+                            cpk_formula = "Cpl" # Cập nhật công thức sử dụng
                             
-                        # ĐÁNH GIÁ TRẠNG THÁI NẾU CÓ CPK
                         if cpk_val is not None:
                             cpk = format_num(cpk_val)
                             status = "🟢 Excellent" if cpk_val >= 1.33 else ("🟡 Acceptable" if cpk_val >= 1.0 else "🔴 Action Required")
@@ -251,11 +250,23 @@ if uploaded_file:
                         "Cp": cp,
                         "Ca": ca,
                         "Cpk": cpk,
+                        "Cpk Formula": cpk_formula, # THÊM CỘT NÀY VÀO BẢNG
                         "Status": status
                     })
             
             if summary_data:
                 st.dataframe(pd.DataFrame(summary_data), hide_index=True, use_container_width=True)
+                
+                # THÊM MỤC CHÚ THÍCH CÔNG THỨC BÊN DƯỚI BẢNG
+                st.markdown("""
+                ---
+                ##### 💡 Capability Formulas Reference
+                * **Cpu** = (USL - Mean) / 3σ
+                * **Cpl** = (Mean - LSL) / 3σ
+                * **Cpk** = Min(Cpu, Cpl) *(if both limits exist)*
+                * **Cp** = (USL - LSL) / 6σ
+                * **Ca** = (Mean - Center) / Half-Tolerance
+                """)
             else:
                 st.warning("No data found.")
 
