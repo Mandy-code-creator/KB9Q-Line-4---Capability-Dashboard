@@ -33,6 +33,12 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
+export_config = {
+    'displayModeBar': True, 
+    'displaylogo': False,
+    'toImageButtonOptions': {'format': 'png', 'filename': 'Quality_Report', 'height': 700, 'width': 1200, 'scale': 2}
+}
+
 # ==========================================
 # 2. CACHING & UTILITY FUNCTIONS
 # ==========================================
@@ -55,12 +61,6 @@ def get_limit(df, keyword, limit_type, category):
         return float(val) if pd.notnull(val) and val > 0 else None
     return None
 
-export_config = {
-    'displayModeBar': True, 
-    'displaylogo': False,
-    'toImageButtonOptions': {'format': 'png', 'filename': 'Quality_Report', 'height': 700, 'width': 1200, 'scale': 2}
-}
-
 # ==========================================
 # 3. SIDEBAR & DATA PROCESSING
 # ==========================================
@@ -81,8 +81,6 @@ if uploaded_file:
         if not available: st.stop()
 
         selected_label = st.sidebar.selectbox("Select Parameter:", available)
-        
-        # KHÔI PHỤC LOGIC RADIO BUTTON GỐC
         view_mode = st.sidebar.radio("View Mode:", ["Process Analytics", "SPC Control Charts (I-MR)"])
         
         short_key = metrics_map[selected_label]
@@ -123,18 +121,19 @@ if uploaded_file:
 
                 def add_dist_vline(val, name, color, dash, pos):
                     if val is not None:
-                        fig_dist.add_vline(x=val, line_dash=dash, line_color=color, line_width=2.5,
+                        fig_dist.add_vline(x=val, line_dash=dash, line_color=color, line_width=3, # In đậm đường
                                           annotation_text=f"<b>{name}:<br>{val:.1f}</b>", annotation_position=pos,
-                                          annotation_font=dict(size=11, color=color), annotation_bgcolor="rgba(255,255,255,0.85)")
+                                          annotation_font=dict(size=13, color=color), # Chữ to hơn 13px
+                                          annotation_bgcolor="rgba(255,255,255,0.9)")
 
                 add_dist_vline(v_lsl_tgt, "Cust LSL", "#2E7D32", "solid", "top left")
                 add_dist_vline(v_usl_tgt, "Cust USL", "#2E7D32", "solid", "top right")
                 add_dist_vline(v_lsl_std, "Int LSL", "#D32F2F", "dash", "top right")
                 add_dist_vline(v_usl_std, "Int USL", "#D32F2F", "dash", "top left")
 
-                fig_dist.update_layout(template="simple_white", height=500, xaxis_range=x_range, showlegend=False, margin=dict(t=80, r=100, l=60, b=60))
-                fig_dist.update_xaxes(showline=True, linewidth=2, linecolor='black', mirror='all')
-                fig_dist.update_yaxes(showline=True, linewidth=2, linecolor='black', mirror='all')
+                fig_dist.update_layout(template="simple_white", height=500, xaxis_range=x_range, showlegend=False, margin=dict(t=80, r=120, l=60, b=60))
+                fig_dist.update_xaxes(showline=True, linewidth=2, linecolor='black', mirror='all', font=dict(weight='bold'))
+                fig_dist.update_yaxes(showline=True, linewidth=2, linecolor='black', mirror='all', font=dict(weight='bold'))
                 st.plotly_chart(fig_dist, use_container_width=True, config=export_config)
 
                 st.subheader("II. Trend Analysis")
@@ -144,9 +143,10 @@ if uploaded_file:
 
                 def add_trend_hline(val, name, color, dash, pos):
                     if val is not None:
-                        fig_trend.add_hline(y=val, line_dash=dash, line_color=color, line_width=2.5,
+                        fig_trend.add_hline(y=val, line_dash=dash, line_color=color, line_width=3, # In đậm đường
                                            annotation_text=f"<b>{name}: {val:.1f}</b>", annotation_position=pos,
-                                           annotation_font=dict(size=11, color=color), annotation_bgcolor="rgba(255,255,255,0.85)")
+                                           annotation_font=dict(size=13, color=color), # Chữ to hơn 13px
+                                           annotation_bgcolor="rgba(255,255,255,0.9)")
 
                 add_trend_hline(v_usl_tgt, "Cust USL", "#2E7D32", "solid", "top right")
                 add_trend_hline(v_usl_std, "Int USL", "#D32F2F", "dash", "bottom right")
@@ -156,15 +156,9 @@ if uploaded_file:
                 add_trend_hline(lcl, "LCL", "#E67E22", "dot", "bottom left")
                 add_trend_hline(mu, "Mean", "#8E44AD", "dashdot", "top left")
 
-                fig_trend.add_trace(go.Scatter(x=plot_data.index, y=plot_data, mode='lines+markers', line=dict(color='#1F77B4', width=2), marker=dict(size=7, color='#1F77B4')))
+                fig_trend.add_trace(go.Scatter(x=plot_data.index, y=plot_data, mode='lines+markers', line=dict(color='#1F77B4', width=2.5), marker=dict(size=8, color='#1F77B4')))
                 
-                usl_limit = v_usl_std if v_usl_std is not None else (v_usl_tgt if v_usl_tgt is not None else float('inf'))
-                lsl_limit = v_lsl_std if v_lsl_std is not None else (v_lsl_tgt if v_lsl_tgt is not None else float('-inf'))
-                ooc = plot_data[(plot_data > usl_limit) | (plot_data < lsl_limit)]
-                if not ooc.empty:
-                    fig_trend.add_trace(go.Scatter(x=ooc.index, y=ooc, mode='markers', marker=dict(color='#D32F2F', size=9, symbol='circle', line=dict(color='white', width=1))))
-
-                fig_trend.update_layout(template="simple_white", height=600, showlegend=False, margin=dict(t=50, r=100, l=60, b=60))
+                fig_trend.update_layout(template="simple_white", height=600, showlegend=False, margin=dict(t=50, r=120, l=60, b=60))
                 fig_trend.update_xaxes(showline=True, linewidth=2, linecolor='black', mirror='all')
                 fig_trend.update_yaxes(showline=True, linewidth=2, linecolor='black', mirror='all')
                 st.plotly_chart(fig_trend, use_container_width=True, config=export_config)
@@ -174,22 +168,22 @@ if uploaded_file:
                 st.subheader("III. Statistical Process Control (I-MR)")
                 mr = plot_data.diff().abs()
                 mr_mean, mr_ucl = mr.mean(), mr.mean() * 3.267
-                fig_imr = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.15, subplot_titles=("Individual Chart (I)", "Moving Range Chart (MR)"))
+                fig_imr = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.15, subplot_titles=("<b>Individual Chart (I)</b>", "<b>Moving Range Chart (MR)</b>"))
                 
-                fig_imr.add_trace(go.Scatter(y=plot_data, mode='lines+markers', line=dict(color='#1F77B4')), row=1, col=1)
-                fig_imr.add_trace(go.Scatter(y=mr, mode='lines+markers', line=dict(color='#1F77B4')), row=2, col=1)
+                fig_imr.add_trace(go.Scatter(y=plot_data, mode='lines+markers', line=dict(color='#1F77B4', width=2)), row=1, col=1)
+                fig_imr.add_trace(go.Scatter(y=mr, mode='lines+markers', line=dict(color='#1F77B4', width=2)), row=2, col=1)
 
                 def add_imr_hline(val, label, color, row):
                     if val is not None:
-                        fig_imr.add_hline(y=val, line_dash="dash", line_color=color, line_width=2,
+                        fig_imr.add_hline(y=val, line_dash="dash", line_color=color, line_width=2.5,
                                         annotation_text=f"<b>{label}: {val:.1f}</b>", annotation_position="top right",
-                                        annotation_font=dict(color=color, size=11),
+                                        annotation_font=dict(color=color, size=13), # Chữ to hơn 13px
                                         annotation_bgcolor="rgba(255,255,255,0.85)", row=row, col=1)
 
                 add_imr_hline(ucl, 'UCL', '#D32F2F', 1); add_imr_hline(lcl, 'LCL', '#D32F2F', 1); add_imr_hline(mu, 'Mean', '#2E7D32', 1)
-                add_imr_hline(mr_mean, 'MR Mean', '#2E7D32', 2); add_imr_hline(mr_ucl, 'MR UCL', '#D32F2F', 2)
+                add_imr_hline(mr_mean, 'MR Mean', '#2E7D32', 2); add_imr_hline(mr_ucl, '#D32F2F', 2)
 
-                fig_imr.update_layout(height=750, template="simple_white", showlegend=False, margin=dict(l=60, r=100, t=60, b=60))
+                fig_imr.update_layout(height=750, template="simple_white", showlegend=False, margin=dict(l=60, r=120, t=80, b=60))
                 fig_imr.update_xaxes(showline=True, linewidth=2, linecolor='black', mirror='all')
                 fig_imr.update_yaxes(showline=True, linewidth=2, linecolor='black', mirror='all')
                 st.plotly_chart(fig_imr, use_container_width=True, config=export_config)
