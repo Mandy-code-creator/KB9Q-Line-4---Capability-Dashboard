@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.ticker import MaxNLocator
 import re
 from scipy.stats import norm
 
@@ -111,10 +112,8 @@ if uploaded_file:
                     ax_t.axhline(ucl_v1, color="#ff7f0e", ls=":", lw=3, label="3σ UCL")
                     ax_t.axhline(lcl_v1, color="#ff7f0e", ls=":", lw=3, label="3σ LCL")
                     
-                    # BỔ SUNG NHÃN TRỤC VIEW 1 - TREND
-                    ax_t.set_xlabel("Số thứ tự cuộn thép (Coil Sequence)", weight="bold")
-                    ax_t.set_ylabel(f"Giá trị {selected_label}", weight="bold")
-                    
+                    ax_t.set_xlabel("Coil Sequence", weight="bold")
+                    ax_t.set_ylabel(f"{selected_label} Value", weight="bold")
                     ax_t.set_title(f"{selected_label} Trend Analysis", pad=20)
                     ax_t.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), ncol=4, fontsize=9)
                     apply_full_border(ax_t); plt.tight_layout(); st.pyplot(fig_t)
@@ -123,9 +122,11 @@ if uploaded_file:
                     fig_d, ax_d = plt.subplots(figsize=(12, 6))
                     counts, bins, patches = ax_d.hist(plot_data, bins=20, density=False, alpha=0.4, color="#7FB3D5", edgecolor="black")
                     
-                    # BỔ SUNG NHÃN TRỤC VIEW 1 - DISTRIBUTION
-                    ax_d.set_xlabel(f"Giá trị {selected_label}", weight="bold")
-                    ax_d.set_ylabel("Số lượng cuộn thép (Coil Count)", weight="bold")
+                    # FIX: Force Y-axis to show only Integers (Coil Counts)
+                    ax_d.yaxis.set_major_locator(MaxNLocator(integer=True))
+                    
+                    ax_d.set_xlabel(f"{selected_label} Value", weight="bold")
+                    ax_d.set_ylabel("Coil Count", weight="bold")
                     
                     ax_pdf = ax_d.twinx()
                     xs = np.linspace(plot_data.min()*0.9, plot_data.max()*1.1, 500)
@@ -136,7 +137,7 @@ if uploaded_file:
                         if val is not None:
                             ax.axvline(val, color=color, linestyle=ls, linewidth=3, label=label)
                             y_max = ax.get_ylim()[1]
-                            y_pos = y_max * (1 + (level * 0.07)) 
+                            y_pos = y_max * (1 + (level * 0.08)) # Added extra clearance
                             ax.text(val, y_pos, f"{val:.1f}", color=color, ha='center', va='bottom', fontweight='bold')
 
                     add_vline_std(ax_d, mu, "blue", "-", "Mean", 0)
@@ -147,7 +148,7 @@ if uploaded_file:
                     add_vline_std(ax_d, ucl_v1, "#ff7f0e", ":", "3σ UCL", 3)
                     add_vline_std(ax_d, lcl_v1, "#ff7f0e", ":", "3σ LCL", 3)
                     
-                    ax_d.set_title(f"{selected_label} Distribution & Capability", pad=80)
+                    ax_d.set_title(f"{selected_label} Distribution & Capability", pad=90)
                     ax_d.legend(loc="upper left", bbox_to_anchor=(1, 1))
                     apply_full_border(ax_d); plt.tight_layout(); st.pyplot(fig_d)
 
@@ -156,32 +157,32 @@ if uploaded_file:
             # ==========================================
             else:
                 st.subheader("II. Control Limit Optimization & I-MR")
-                st.markdown("##### ⚙️ Parameters")
+                st.markdown("##### ⚙️ Optimization Parameters")
                 c_i1, c_i2 = st.columns(2)
                 with c_i1:
                     k_val = st.number_input("Target k-factor:", 1.0, 6.0, 3.0, 0.1)
                 with c_i2:
-                    m_sigma = st.number_input("Target Sigma (0=auto):", 0.0, 100.0, 0.0, 0.1)
+                    m_sigma = st.number_input("Target Sigma (σ) (0=auto):", 0.0, 100.0, 0.0, 0.1)
                 
                 s_used = sigma_fixed if m_sigma == 0 else m_sigma
                 q1, q3 = plot_data.quantile(0.25), plot_data.quantile(0.75)
                 s_iqr = (q3 - q1) / 1.349
 
-                st.markdown("##### 🎯 Step-by-Step Calculation")
-                col_t1, col_t2 = st.columns(2)
-                with col_t1:
+                st.markdown("##### 🎯 Comparative Analysis")
+                col_res1, col_res2 = st.columns(2)
+                with col_res1:
                     st.write("**Method: Standard Deviation**")
                     st.table(pd.DataFrame({
                         "Metric": ["Mean", "Sigma (σ)", "LSL", "USL"],
                         "Value": [format_num(mu), format_num(sigma_fixed), format_num(mu - k_val*sigma_fixed), format_num(mu + k_val*sigma_fixed)],
-                        "Formula": ["Sum / N", "StdDev", f"Mean-({k_val}*σ)", f"Mean+({k_val}*σ)"]
+                        "Formula": ["Sum/N", "StdDev", f"Mean-({k_val}*σ)", f"Mean+({k_val}*σ)"]
                     }))
-                with col_t2:
+                with col_res2:
                     st.write("**Method: IQR (Robust)**")
                     st.table(pd.DataFrame({
                         "Metric": ["Mean", "Sigma_iqr", "LSL", "USL"],
                         "Value": [format_num(mu), format_num(s_iqr), format_num(mu - k_val*s_iqr), format_num(mu + k_val*s_iqr)],
-                        "Formula": ["Sum / N", "IQR / 1.349", f"Mean-({k_val}*σ_i)", f"Mean+({k_val}*σ_i)"]
+                        "Formula": ["Sum/N", "IQR/1.349", f"Mean-({k_val}*σ_i)", f"Mean+({k_val}*σ_i)"]
                     }))
 
                 st.markdown("---")
@@ -189,20 +190,18 @@ if uploaded_file:
                 ax_i.plot(plot_data, marker="o", color="#1f77b4", label="Actual Data", alpha=0.7)
                 ax_i.axhline(mu, color="purple", ls="--", lw=2, label=f"Mean: {mu:.1f}")
                 
-                if int_lsl: ax_i.axhline(int_lsl, color="red", ls="--", label="Current LSL (File)")
-                if int_usl: ax_i.axhline(int_usl, color="red", ls="--", label="Current USL (File)")
+                if int_lsl: ax_i.axhline(int_lsl, color="red", ls="--", label="Current Int LSL")
+                if int_usl: ax_i.axhline(int_usl, color="red", ls="--", label="Current Int USL")
                 ax_i.axhline(mu + k_val*s_used, color="darkred", ls="-", lw=2, label=f"Proposed USL ({k_val}σ)")
                 ax_i.axhline(mu - k_val*s_used, color="darkred", ls="-", lw=2, label=f"Proposed LSL ({k_val}σ)")
                 
-                # BỔ SUNG NHÃN TRỤC VIEW 2 - I-CHART
-                ax_i.set_xlabel("Số thứ tự cuộn thép (Coil Sequence)", weight="bold")
-                ax_i.set_ylabel(f"Giá trị {selected_label}", weight="bold")
-                
+                ax_i.set_xlabel("Coil Sequence", weight="bold")
+                ax_i.set_ylabel(f"{selected_label} Value", weight="bold")
                 ax_i.set_title("I-Chart: Optimization Comparison", weight="bold")
                 ax_i.legend(loc="upper left", bbox_to_anchor=(1, 1))
                 apply_full_border(ax_i); plt.tight_layout(); st.pyplot(fig_imr)
 
     except Exception as e:
-        st.error(f"Error: {e}")
+        st.error(f"System Error: {e}")
 else:
-    st.info("👈 Please upload data to start.")
+    st.info("👈 Please upload the production report to start.")
