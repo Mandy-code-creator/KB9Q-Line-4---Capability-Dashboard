@@ -13,10 +13,10 @@ st.set_page_config(page_title="Line 4 Quality Analytics", layout="wide")
 
 # Thiết lập font in đậm và to toàn cục cho biểu đồ
 plt.rcParams.update({
-    'font.size': 12,
+    'font.size': 11,
     'axes.labelweight': 'bold',
     'axes.titleweight': 'bold',
-    'axes.titlesize': 15,
+    'axes.titlesize': 14,
     'legend.fontsize': 10,
     'font.weight': 'bold',
     'lines.linewidth': 2.5
@@ -45,7 +45,6 @@ def get_limit(df, keyword, limit_type, category):
     return None
 
 def apply_full_border(ax):
-    """Ép khung viền đen đậm kín 4 cạnh để không bị mất cạnh số 4"""
     for spine in ax.spines.values():
         spine.set_linewidth(2.5)
         spine.set_color('black')
@@ -69,11 +68,11 @@ if uploaded_file:
 
         metrics_map = {"YS": "YS", "TS": "TS", "EL": "EL", "Hardness": "HRB", "YPE": "YPE"}
         available = [k for k, v in metrics_map.items() if find_data_col(df, v)]
-        if not available:
-            st.error("❌ Không tìm thấy cột dữ liệu phù hợp.")
-            st.stop()
+        if not available: st.stop()
 
         selected_label = st.sidebar.selectbox("Select Parameter:", available)
+        
+        # --- QUAY LẠI 2 VIEW CHÍNH ---
         view_mode = st.sidebar.radio("View Mode:", ["Process Analytics", "SPC Control Charts (I-MR)"])
         
         short_key = metrics_map[selected_label]
@@ -88,12 +87,14 @@ if uploaded_file:
 
         if data_col:
             plot_data = pd.to_numeric(df[data_col], errors='coerce').dropna().reset_index(drop=True)
-            n = len(plot_data)
-            mu, sigma = plot_data.mean(), plot_data.std(ddof=1)
+            n, mu, sigma = len(plot_data), plot_data.mean(), plot_data.std(ddof=1)
             ucl_3s, lcl_3s = mu + 3*sigma, mu - 3*sigma
 
             st.title(f"📊 Quality Analytics: {selected_label}")
 
+            # ==========================================
+            # VIEW 1: PROCESS ANALYTICS (Histogram & Trend)
+            # ==========================================
             if view_mode == "Process Analytics":
                 tab_trend, tab_dist = st.tabs(["📈 Trend Analysis", "📊 Distribution & SPC"])
 
@@ -102,93 +103,102 @@ if uploaded_file:
                     fig_t, ax_t = plt.subplots(figsize=(12, 6))
                     ax_t.plot(x_idx, plot_data, marker="o", markersize=6, label="Actual Value", color="#1f77b4", zorder=1)
                     
-                    out_mask = pd.Series([False] * n)
-                    if int_usl: out_mask |= (plot_data > int_usl)
-                    if int_lsl: out_mask |= (plot_data < int_lsl)
+                    out_mask = (plot_data > (int_usl if int_usl else 99999)) | (plot_data < (int_lsl if int_lsl else -99999))
                     if out_mask.any():
-                        ax_t.scatter(x_idx[out_mask], plot_data[out_mask], color='red', s=120, 
-                                    label="Out of Internal Spec", edgecolor='black', linewidth=1.5, zorder=3)
+                        ax_t.scatter(x_idx[out_mask], plot_data[out_mask], color='red', s=120, label="Out of Internal Spec", edgecolor='black', zorder=3)
 
-                    if cust_lsl: ax_t.axhline(cust_lsl, color="green", linestyle="-", linewidth=3, label=f"Cust LSL: {cust_lsl:.1f}")
-                    if cust_usl: ax_t.axhline(cust_usl, color="green", linestyle="-", linewidth=3, label=f"Cust USL: {cust_usl:.1f}")
-                    if int_lsl: ax_t.axhline(int_lsl, color="red", linestyle="--", linewidth=3, label=f"Int LSL: {int_lsl:.1f}")
-                    if int_usl: ax_t.axhline(int_usl, color="red", linestyle="--", linewidth=3, label=f"Int USL: {int_usl:.1f}")
-                    ax_t.axhline(ucl_3s, color="#ff7f0e", linestyle=":", linewidth=3, label=f"3σ UCL: {ucl_3s:.1f}")
-                    ax_t.axhline(lcl_3s, color="#ff7f0e", linestyle=":", linewidth=3, label=f"3σ LCL: {lcl_3s:.1f}")
-                    ax_t.axhline(mu, color="purple", linestyle="-.", linewidth=2, label=f"Mean: {mu:.1f}")
+                    if cust_lsl: ax_t.axhline(cust_lsl, color="green", linestyle="-", label=f"Cust LSL: {cust_lsl:.1f}")
+                    if cust_usl: ax_t.axhline(cust_usl, color="green", linestyle="-", label=f"Cust USL: {cust_usl:.1f}")
+                    if int_lsl: ax_t.axhline(int_lsl, color="red", linestyle="--", label=f"Int LSL: {int_lsl:.1f}")
+                    if int_usl: ax_t.axhline(int_usl, color="red", linestyle="--", label=f"Int USL: {int_usl:.1f}")
+                    ax_t.axhline(ucl_3s, color="#ff7f0e", linestyle=":", label="3σ Limit")
+                    ax_t.axhline(lcl_3s, color="#ff7f0e", linestyle=":")
 
-                    ax_t.set_title(f"{selected_label} Trend Analysis", pad=20)
-                    ax_t.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), frameon=True, ncol=3, fontsize=9)
+                    ax_t.set_title(f"{selected_label} Performance Trend", pad=15)
+                    ax_t.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), frameon=True, ncol=3)
                     apply_full_border(ax_t)
-                    plt.tight_layout()
-                    st.pyplot(fig_t)
+                    plt.tight_layout(); st.pyplot(fig_t)
 
                 with tab_dist:
-                    cp, ca, cpk = 0.0, 0.0, 0.0
-                    if sigma > 0 and int_usl and int_lsl:
-                        cp = (int_usl - int_lsl) / (6 * sigma)
-                        ca = ((mu - (int_usl + int_lsl) / 2) / ((int_usl - int_lsl) / 2)) * 100
-                        cpu = (int_usl - mu) / (3 * sigma)
-                        cpl = (mu - int_lsl) / (3 * sigma)
-                        cpk = min(cpu, cpl)
-
+                    cpk = min((int_usl - mu)/(3*sigma), (mu - int_lsl)/(3*sigma)) if sigma > 0 and int_usl and int_lsl else 0
                     fig_d, ax_d = plt.subplots(figsize=(12, 6))
                     ax_d.hist(plot_data, bins=20, density=True, alpha=0.4, color="#7FB3D5", edgecolor="black")
                     xs = np.linspace(plot_data.min()*0.9, plot_data.max()*1.1, 500)
-                    ax_d.plot(xs, norm.pdf(xs, mu, sigma), color="#1E3A8A", linewidth=3, label="Normal Fit")
+                    ax_d.plot(xs, norm.pdf(xs, mu, sigma), color="#1E3A8A", linewidth=3)
                     
-                    # LOGIC NHÃN BẬC THANG: Tránh ghi đè khi các giới hạn trùng nhau
-                    def add_vline_with_stepped_value(ax, val, color, ls, label, level=1):
+                    def add_vline_stepped(ax, val, color, ls, label, level=1):
                         if val is not None:
                             ax.axvline(val, color=color, linestyle=ls, linewidth=3, label=label)
                             y_max = ax.get_ylim()[1]
-                            # Tầng 1: sát khung, Tầng 2: cao hơn 5%, Tầng 3: cao hơn 10%
                             y_pos = y_max * (1 + (level - 1) * 0.06)
-                            ax.text(val, y_pos, f"{val:.1f}", color=color, ha='center', va='bottom', 
-                                    fontsize=11, fontweight='bold')
+                            ax.text(val, y_pos, f"{val:.1f}", color=color, ha='center', va='bottom', fontweight='bold')
 
-                    add_vline_with_stepped_value(ax_d, cust_lsl, "green", "-", "Cust LSL", level=1)
-                    add_vline_with_stepped_value(ax_d, cust_usl, "green", "-", "Cust USL", level=1)
-                    add_vline_with_stepped_value(ax_d, int_lsl, "red", "--", "Int LSL", level=2)
-                    add_vline_with_stepped_value(ax_d, int_usl, "red", "--", "Int USL", level=2)
-                    add_vline_with_stepped_value(ax_d, ucl_3s, "#ff7f0e", ":", "3σ UCL", level=3)
-                    add_vline_with_stepped_value(ax_d, lcl_3s, "#ff7f0e", ":", "3σ LCL", level=3)
+                    add_vline_stepped(ax_d, cust_lsl, "green", "-", "Cust LSL", 1)
+                    add_vline_stepped(ax_d, cust_usl, "green", "-", "Cust USL", 1)
+                    add_vline_stepped(ax_d, int_lsl, "red", "--", "Int LSL", 2)
+                    add_vline_stepped(ax_d, int_usl, "red", "--", "Int USL", 2)
+                    add_vline_stepped(ax_d, ucl_3s, "#ff7f0e", ":", "3σ Limit", 3)
+                    add_vline_stepped(ax_d, lcl_3s, "#ff7f0e", ":", "", 3)
 
                     ax_d.set_title(f"{selected_label} Distribution & Capability", pad=65)
                     ax_d.legend(loc="upper left", bbox_to_anchor=(1, 1))
                     apply_full_border(ax_d)
-                    plt.tight_layout()
-                    st.pyplot(fig_d)
+                    plt.tight_layout(); st.pyplot(fig_d)
+                    st.metric("Current Cpk (Internal Control)", f"{cpk:.3f}")
 
-                    rating = "Excellent" if cpk >= 1.33 else ("Good" if cpk >= 1.0 else "Poor")
-                    color_code = "green" if cpk >= 1.33 else ("orange" if cpk >= 1.0 else "red")
-                    df_spc = pd.DataFrame([{"N": n, "Mean": mu, "Std": sigma, "Cp": cp, "Ca (%)": ca, "Cpk": cpk, "Rating": rating}])
-                    st.dataframe(df_spc.style.format("{:.3f}", subset=["Mean", "Std", "Cp", "Ca (%)", "Cpk"])
-                                 .map(lambda v: f'color: {color_code}; font-weight: bold', subset=['Rating']), 
-                                 hide_index=True, use_container_width=True)
-
+            # ==========================================
+            # VIEW 2: SPC CONTROL CHARTS (I-MR) + LIMIT OPTIMIZATION
+            # ==========================================
             else:
-                st.subheader("III. Statistical Process Control (I-MR)")
+                st.subheader("II. Statistical Process Control & Limit Optimization")
+                
+                # --- PHẦN 1: TÍNH TOÁN TỐI ƯU (NẰM TRÊN) ---
+                st.markdown("##### 🛠️ Optimization Analysis")
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.info(f"**Năng lực thực tế:**\n\nMean: {mu:.2f} | σ: {sigma:.2f}\n\nBiến động thực tế (6σ): {6*sigma:.2f}")
+                with c2:
+                    st.success(f"**Giới hạn đề xuất (±3σ):**\n\nLower: {lcl_3s:.1f} | Upper: {ucl_3s:.1f}\n\n*Đây là giới hạn tối ưu giúp Cpk ≈ 1.0*")
+                
+                # Bảng so sánh 3 loại giới hạn
+                comp_df = pd.DataFrame({
+                    "Loại giới hạn": ["Khách hàng (Spec)", "Nội bộ hiện tại (File)", "Đề xuất tối ưu (±3σ)"],
+                    "LSL": [cust_lsl, int_lsl, round(lcl_3s, 1)],
+                    "USL": [cust_usl, int_usl, round(ucl_3s, 1)],
+                    "Dải Tolerance": [
+                        (cust_usl-cust_lsl) if cust_usl else 0,
+                        (int_usl-int_lsl) if int_usl else 0,
+                        round(ucl_3s - lcl_3s, 1)
+                    ]
+                })
+                st.table(comp_df)
+                
+                st.markdown("---")
+
+                # --- PHẦN 2: BIỂU ĐỒ I-MR (NẰM DƯỚI) ---
+                st.markdown("##### 📈 I-MR Charts")
                 mr = plot_data.diff().abs()
                 mr_ucl = mr.mean() * 3.267
-                fig_imr, (ax_i, ax_mr) = plt.subplots(2, 1, figsize=(12, 8), sharex=True)
-                ax_i.plot(plot_data, marker="o", color="#1f77b4")
-                ax_i.axhline(ucl_3s, color="red", linestyle="--", label="UCL")
-                ax_i.axhline(lcl_3s, color="red", linestyle="--", label="LCL")
-                ax_i.axhline(mu, color="green", linestyle="-", label="Mean")
-                ax_i.set_title("Individual Chart (I)")
-                ax_i.legend(loc="right")
-                apply_full_border(ax_i)
-                ax_mr.plot(mr, marker="o", color="#ff7f0e")
-                ax_mr.axhline(mr_ucl, color="red", linestyle="--", label="MR UCL")
-                ax_mr.axhline(mr.mean(), color="green", linestyle="-", label="Avg MR")
-                ax_mr.set_title("Moving Range Chart (MR)")
-                ax_mr.legend(loc="right")
-                apply_full_border(ax_mr)
-                plt.tight_layout()
-                st.pyplot(fig_imr)
+                fig_imr, (ax_i, ax_mr) = plt.subplots(2, 1, figsize=(12, 9), sharex=True)
+                
+                # I Chart
+                ax_i.plot(plot_data, marker="o", color="#1f77b4", markersize=5)
+                ax_i.axhline(ucl_3s, color="red", ls="--", label="UCL")
+                ax_i.axhline(lcl_3s, color="red", ls="--", label="LCL")
+                ax_i.axhline(mu, color="green", ls="-", label="Mean")
+                ax_i.set_title("Individual Chart (I)", weight="bold")
+                ax_i.legend(loc="upper left", bbox_to_anchor=(1, 1)); apply_full_border(ax_i)
+                
+                # MR Chart
+                ax_mr.plot(mr, marker="o", color="#ff7f0e", markersize=5)
+                ax_mr.axhline(mr_ucl, color="red", ls="--", label="MR UCL")
+                ax_mr.axhline(mr.mean(), color="green", ls="-", label="Avg MR")
+                ax_mr.set_title("Moving Range Chart (MR)", weight="bold")
+                ax_mr.legend(loc="upper left", bbox_to_anchor=(1, 1)); apply_full_border(ax_mr)
+                
+                plt.tight_layout(); st.pyplot(fig_imr)
 
     except Exception as e:
-        st.error(f"Lỗi: {e}")
+        st.error(f"Lỗi hệ thống: {e}")
 else:
-    st.info("👈 Vui lòng upload file để bắt đầu.")
+    st.info("👈 Mandy hãy tải file báo cáo lên để bắt đầu phân tích và tối ưu giới hạn.")
