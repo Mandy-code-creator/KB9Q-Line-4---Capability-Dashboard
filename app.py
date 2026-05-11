@@ -62,15 +62,12 @@ def get_limit(df, keyword, limit_type, category):
     return None
 
 def add_smart_line(fig, axis, val, name, color, dash, pos):
-    """Hàm chung để vẽ đường ngang (y) hoặc dọc (x) sắc nét"""
     if val is None: return
-    
     line_args = dict(line_dash=dash, line_color=color, line_width=2.5, opacity=1,
                      annotation_text=f"<b>{name}:<br>{val:.1f}</b>" if axis == 'x' else f"<b>{name}: {val:.1f}</b>",
                      annotation_position=pos,
                      annotation_font=dict(size=11, color=color),
                      annotation_bgcolor="rgba(255,255,255,0.85)")
-    
     if axis == 'x':
         fig.add_vline(x=val, **line_args)
     else:
@@ -95,13 +92,9 @@ if uploaded_file:
 
         metrics_map = {"YS": "YS", "TS": "TS", "EL": "EL", "Hardness": "HRB", "YPE": "YPE"}
         available = [k for k, v in metrics_map.items() if find_data_col(df, v)]
-        
-        if not available:
-            st.error("❌ No matching measurement columns found.")
-            st.stop()
+        if not available: st.stop()
 
         selected_label = st.sidebar.selectbox("Select Parameter:", available)
-        
         short_key = metrics_map[selected_label]
         data_col = find_data_col(df, short_key)
         zh_map = {"YS": "降伏強度", "TS": "抗拉強度", "EL": "伸長率", "HRB": "硬度", "YPE": "YPE"}
@@ -115,35 +108,23 @@ if uploaded_file:
         if data_col:
             plot_data = pd.to_numeric(df[data_col], errors='coerce').dropna().reset_index(drop=True)
             n = len(plot_data)
-            
-            if n < 2:
-                st.warning("⚠️ Cần ít nhất 2 mẫu dữ liệu để thực hiện phân tích thống kê.")
-                st.stop()
+            if n < 2: st.stop()
                 
             mu, sigma = plot_data.mean(), plot_data.std()
             ucl, lcl = mu + 3*sigma, mu - 3*sigma
-
-            cp, cpk = None, None
-            if sigma > 0:
-                if v_lsl_std and v_usl_std:
-                    cp = (v_usl_std - v_lsl_std) / (6 * sigma)
-                    cpk = min((v_usl_std - mu)/(3*sigma), (mu - v_lsl_std)/(3*sigma))
-                elif v_lsl_std: cpk = (mu - v_lsl_std)/(3*sigma)
-                elif v_usl_std: cpk = (v_usl_std - mu)/(3*sigma)
+            cpk = min((v_usl_std - mu)/(3*sigma), (mu - v_lsl_std)/(3*sigma)) if sigma > 0 and v_usl_std and v_lsl_std else None
 
             st.title(f"📊 Quality Analytics: {selected_label}")
             k1, k2, k3, k4 = st.columns(4)
             k1.metric("Samples (N)", n)
             k2.metric("Mean (μ)", f"{mu:.2f}")
             k3.metric("Std Dev (σ)", f"{sigma:.2f}")
-            status = "Pass" if cpk and cpk >= 1.33 else "Warning"
-            k4.metric("Cpk (Internal)", f"{cpk:.2f}" if cpk else "N/A", delta=status if cpk else None)
+            k4.metric("Cpk (Internal)", f"{cpk:.2f}" if cpk else "N/A")
 
             tab1, tab2 = st.tabs(["📈 Process Analytics", "📊 SPC Control Charts (I-MR)"])
 
             with tab1:
                 col1, col2 = st.columns([1, 1])
-                
                 with col1:
                     st.subheader("I. Distribution & Capability")
                     k_bins = math.ceil(1 + 3.322 * math.log10(n)) if n > 0 else 10
@@ -151,28 +132,27 @@ if uploaded_file:
                     x_range = [min(pts) - abs(min(pts)*0.1), max(pts) + abs(max(pts)*0.1)]
 
                     fig_dist = go.Figure()
-                    fig_dist.add_trace(go.Histogram(x=plot_data, nbinsx=k_bins, name='Data', marker_color='#7FB3D5', opacity=0.8, marker_line_color='white', marker_line_width=1))
+                    fig_dist.add_trace(go.Histogram(x=plot_data, nbinsx=k_bins, marker_color='#7FB3D5', opacity=0.8, marker_line_color='white', marker_line_width=1))
                     
                     if sigma > 0:
                         x_c = np.linspace(x_range[0], x_range[1], 200)
                         y_c = norm.pdf(x_c, mu, sigma) * n * ((plot_data.max() - plot_data.min()) / k_bins)
-                        fig_dist.add_trace(go.Scatter(x=x_c, y=y_c, mode='lines', name='Normal', line=dict(color='#1E3A8A', width=2)))
+                        fig_dist.add_trace(go.Scatter(x=x_c, y=y_c, mode='lines', line=dict(color='#1E3A8A', width=2)))
 
                     add_smart_line(fig_dist, 'x', v_lsl_tgt, "Cust LSL", "#2E7D32", "solid", "top left")
                     add_smart_line(fig_dist, 'x', v_usl_tgt, "Cust USL", "#2E7D32", "solid", "top right")
                     add_smart_line(fig_dist, 'x', v_lsl_std, "Int LSL", "#D32F2F", "dash", "top right")
                     add_smart_line(fig_dist, 'x', v_usl_std, "Int USL", "#D32F2F", "dash", "top left")
 
-                    fig_dist.update_layout(template="simple_white", height=550, xaxis_range=x_range, showlegend=False, margin=dict(t=80))
-                    # THÊM KHUNG VIỀN HOÀN CHỈNH
-                    fig_dist.update_xaxes(showline=True, linewidth=1.5, linecolor='black', mirror=True)
-                    fig_dist.update_yaxes(showline=True, linewidth=1.5, linecolor='black', mirror=True)
+                    fig_dist.update_layout(template="simple_white", height=550, xaxis_range=x_range, showlegend=False, 
+                                          margin=dict(t=80, r=50, l=50, b=50)) # Thêm lề phải r=50
+                    fig_dist.update_xaxes(showline=True, linewidth=2, linecolor='black', mirror='all') # Dùng mirror='all'
+                    fig_dist.update_yaxes(showline=True, linewidth=2, linecolor='black', mirror='all')
                     st.plotly_chart(fig_dist, use_container_width=True, config=export_config)
 
                 with col2:
                     st.subheader("II. Trend Analysis")
                     fig_trend = go.Figure()
-
                     if v_lsl_tgt and v_usl_tgt:
                         fig_trend.add_hrect(y0=v_lsl_tgt, y1=v_usl_tgt, fillcolor="#E8F5E9", opacity=0.4, layer="below", line_width=0)
 
@@ -184,71 +164,44 @@ if uploaded_file:
                     add_smart_line(fig_trend, 'y', lcl, "LCL", "#E67E22", "dot", "bottom left")
                     add_smart_line(fig_trend, 'y', mu, "Mean", "#8E44AD", "dashdot", "top left")
 
-                    fig_trend.add_trace(go.Scatter(x=plot_data.index, y=plot_data, mode='lines+markers', name='Data',
-                                                line=dict(color='#1F77B4', width=2), marker=dict(size=7, symbol='circle', color='#1F77B4')))
+                    fig_trend.add_trace(go.Scatter(x=plot_data.index, y=plot_data, mode='lines+markers', line=dict(color='#1F77B4', width=2), marker=dict(size=7, symbol='circle', color='#1F77B4')))
                     
                     usl_limit = v_usl_std if v_usl_std is not None else (v_usl_tgt if v_usl_tgt is not None else float('inf'))
                     lsl_limit = v_lsl_std if v_lsl_std is not None else (v_lsl_tgt if v_lsl_tgt is not None else float('-inf'))
                     ooc = plot_data[(plot_data > usl_limit) | (plot_data < lsl_limit)]
                     if not ooc.empty:
-                        fig_trend.add_trace(go.Scatter(x=ooc.index, y=ooc, mode='markers', name='Out of Spec', 
-                                                    marker=dict(color='#D32F2F', size=9, symbol='circle', line=dict(color='white', width=1))))
+                        fig_trend.add_trace(go.Scatter(x=ooc.index, y=ooc, mode='markers', marker=dict(color='#D32F2F', size=9, symbol='circle', line=dict(color='white', width=1))))
 
-                    fig_trend.update_layout(template="simple_white", height=550, margin=dict(t=50, r=20), showlegend=False)
-                    # THÊM KHUNG VIỀN HOÀN CHỈNH
-                    fig_trend.update_xaxes(showline=True, linewidth=1.5, linecolor='black', mirror=True)
-                    fig_trend.update_yaxes(showline=True, linewidth=1.5, linecolor='black', mirror=True)
+                    fig_trend.update_layout(template="simple_white", height=550, margin=dict(t=50, r=50, l=50, b=50))
+                    fig_trend.update_xaxes(showline=True, linewidth=2, linecolor='black', mirror='all')
+                    fig_trend.update_yaxes(showline=True, linewidth=2, linecolor='black', mirror='all')
                     st.plotly_chart(fig_trend, use_container_width=True, config=export_config)
 
             with tab2:
                 st.subheader("III. Statistical Process Control (I-MR)")
                 mr = plot_data.diff().abs()
-                mr_mean = mr.mean()
-                mr_ucl = mr_mean * 3.267
-
-                fig_imr = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.15, 
-                                      subplot_titles=("Individual Chart (I)", "Moving Range Chart (MR)"))
+                mr_mean, mr_ucl = mr.mean(), mr.mean() * 3.267
+                fig_imr = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.15, subplot_titles=("Individual Chart (I)", "Moving Range Chart (MR)"))
                 
-                fig_imr.add_trace(go.Scatter(x=plot_data.index, y=plot_data, mode='lines+markers', 
-                    name='Data (I)', line=dict(color='#1F77B4', width=2), marker=dict(size=7, symbol='circle')), row=1, col=1)
-                
-                ooc_i = plot_data[(plot_data > ucl) | (plot_data < lcl)]
-                if not ooc_i.empty:
-                    fig_imr.add_trace(go.Scatter(x=ooc_i.index, y=ooc_i, mode='markers', name='OOC (I)',
-                        marker=dict(color='#D32F2F', size=9, symbol='circle', line=dict(color='white', width=1))), row=1, col=1)
-
-                fig_imr.add_trace(go.Scatter(x=mr.index, y=mr, mode='lines+markers', 
-                    name='Data (MR)', line=dict(color='#1F77B4', width=2), marker=dict(size=7, symbol='circle')), row=2, col=1)
-
-                ooc_mr = mr[mr > mr_ucl]
-                if not ooc_mr.empty:
-                    fig_imr.add_trace(go.Scatter(x=ooc_mr.index, y=ooc_mr, mode='markers', name='OOC (MR)',
-                        marker=dict(color='#D32F2F', size=9, symbol='circle', line=dict(color='white', width=1))), row=2, col=1)
+                fig_imr.add_trace(go.Scatter(x=plot_data.index, y=plot_data, mode='lines+markers', line=dict(color='#1F77B4', width=2)), row=1, col=1)
+                fig_imr.add_trace(go.Scatter(x=mr.index, y=mr, mode='lines+markers', line=dict(color='#1F77B4', width=2)), row=2, col=1)
 
                 def add_imr_hline(val, label, color, row):
                     if val is not None:
-                        fig_imr.add_hline(y=val, line_dash="dash", line_color=color, line_width=2.5, opacity=1,
+                        fig_imr.add_hline(y=val, line_dash="dash", line_color=color, line_width=2,
                                         annotation_text=f"<b>{label}: {val:.1f}</b>", annotation_position="top right",
                                         annotation_font=dict(color=color, size=11),
                                         annotation_bgcolor="rgba(255,255,255,0.85)", row=row, col=1)
 
-                add_imr_hline(ucl, 'UCL', '#D32F2F', 1)
-                add_imr_hline(lcl, 'LCL', '#D32F2F', 1)
-                add_imr_hline(mu, 'Mean', '#2E7D32', 1)
-                add_imr_hline(mr_mean, 'MR Mean', '#2E7D32', 2)
-                add_imr_hline(mr_ucl, 'MR UCL', '#D32F2F', 2)
+                add_imr_hline(ucl, 'UCL', '#D32F2F', 1); add_imr_hline(lcl, 'LCL', '#D32F2F', 1); add_imr_hline(mu, 'Mean', '#2E7D32', 1)
+                add_imr_hline(mr_mean, 'MR Mean', '#2E7D32', 2); add_imr_hline(mr_ucl, 'MR UCL', '#D32F2F', 2)
 
-                fig_imr.update_layout(height=700, template="simple_white", showlegend=False, margin=dict(l=40, r=80, t=60, b=40))
-                for annotation in fig_imr['layout']['annotations']:
-                    annotation['y'] += 0.02 
-
-                # THÊM KHUNG VIỀN HOÀN CHỈNH CHO CẢ 2 SUBPLOTS
-                fig_imr.update_xaxes(showline=True, linewidth=1.5, linecolor='black', mirror=True)
-                fig_imr.update_yaxes(showline=True, linewidth=1.5, linecolor='black', mirror=True)
-                
+                fig_imr.update_layout(height=700, template="simple_white", showlegend=False, margin=dict(l=50, r=50, t=60, b=50))
+                fig_imr.update_xaxes(showline=True, linewidth=2, linecolor='black', mirror='all')
+                fig_imr.update_yaxes(showline=True, linewidth=2, linecolor='black', mirror='all')
                 st.plotly_chart(fig_imr, use_container_width=True, config=export_config)
 
     except Exception as e:
-        st.error(f"Đã xảy ra lỗi trong quá trình xử lý: {e}")
+        st.error(f"Error: {e}")
 else:
-    st.info("👈 Please upload the production data report (Excel/CSV) to begin.")
+    st.info("👈 Please upload data to begin.")
