@@ -27,32 +27,49 @@ if uploaded_file:
         else:
             df_filtered = df
 
-        # Ánh xạ các cột cơ tính chính xác theo yêu cầu
+        # --- ÁNH XẠ CƠ TÍNH & GIỚI HẠN KIỂM SOÁT ---
         metrics_map = {
-            "降伏強度 (YS)": "降伏強度  (YS)", 
-            "抗拉強度 (TS)": "抗拉強度 (TS)",
-            "伸長率 (EL)": "伸長率 (EL)",
-            "硬度 (HRB)": "硬度HRB",
-            "YPE": "YPE"
+            "YS": {
+                "actual": "降伏強度  (YS)",
+                "lsl": "降伏強度[(min.)管制值]",
+                "usl": "降伏強度[(max.)管制值]"
+            },
+            "TS": {
+                "actual": "抗拉強度 (TS)",
+                "lsl": "抗拉強度[(min.)管制值]",
+                "usl": "抗拉強度[(max.)管制值]"
+            },
+            "EL": {
+                "actual": "伸長率 (EL)",
+                "lsl": "伸長率[(min.)管制值]",
+                "usl": "伸長率[(max.)管制值]"
+            },
+            "HRB": {
+                "actual": "硬度HRB",
+                "lsl": "硬度[(min.)管制值]",
+                "usl": "硬度[(max.)管制值]"
+            },
+            "YPE": {
+                "actual": "YPE",
+                "lsl": None,
+                "usl": None
+            }
         }
-        
-        available_display = [m for m, col_name in metrics_map.items() if col_name in df.columns]
-        
+
+        available_display = list(metrics_map.keys())
+
         st.sidebar.header("📊 Cấu Hình View")
         view_mode = st.sidebar.radio("Chọn Chế Độ Xem:", ["View 1: Trạng Thái Phân Bố & Trending", "View 2: Giới Hạn Kiểm Soát (SPC)"])
         selected_display = st.sidebar.selectbox("Thông số cơ tính:", available_display)
-        
-        actual_data_col = metrics_map[selected_display]
-        search_keyword = selected_display.split(" ")[0]
 
-        # Tìm cột 管制值
-        lsl_col = next((col for col in df.columns if search_keyword in col and "min" in col.lower() and "管制" in col), None)
-        usl_col = next((col for col in df.columns if search_keyword in col and "max" in col.lower() and "管制" in col), None)
+        actual_data_col = metrics_map[selected_display]["actual"]
+        lsl_col = metrics_map[selected_display]["lsl"]
+        usl_col = metrics_map[selected_display]["usl"]
 
         if actual_data_col in df_filtered.columns:
             plot_data = df_filtered[actual_data_col].dropna().reset_index(drop=True)
-            lsl = float(df_filtered[lsl_col].median()) if lsl_col else plot_data.min()
-            usl = float(df_filtered[usl_col].median()) if usl_col else plot_data.max()
+            lsl = float(df_filtered[lsl_col].median()) if lsl_col and lsl_col in df_filtered.columns else plot_data.min()
+            usl = float(df_filtered[usl_col].median()) if usl_col and usl_col in df_filtered.columns else plot_data.max()
 
             # --- RENDER VIEW 1 ---
             if view_mode == "View 1: Trạng Thái Phân Bố & Trending":
@@ -86,10 +103,12 @@ if uploaded_file:
                     ))
                     
                     # Thêm vạch giới hạn 管制值
-                    fig_dist.add_vline(x=lsl, line_dash="dash", line_color="red", annotation_text="LSL")
-                    fig_dist.add_vline(x=usl, line_dash="dash", line_color="red", annotation_text="USL")
+                    if lsl_col:
+                        fig_dist.add_vline(x=lsl, line_dash="dash", line_color="red", annotation_text="LSL")
+                    if usl_col:
+                        fig_dist.add_vline(x=usl, line_dash="dash", line_color="red", annotation_text="USL")
                     
-                    fig_dist.update_layout(template="plotly_white", xaxis_title=selected_display, yaxis_title="Mật độ")
+                    fig_dist.update_layout(template="plotly_white", xaxis_title=actual_data_col, yaxis_title="Mật độ")
                     st.plotly_chart(fig_dist, use_container_width=True)
                 
                 with col_right:
@@ -102,7 +121,7 @@ if uploaded_file:
                         template="plotly_white",
                         color_discrete_sequence=['#19D3F3']
                     )
-                    # Thêm đường xu hướng trung bình động hoặc Lowess để thấy rõ Trending
+                    # Thêm đường xu hướng trung bình động (Lowess)
                     fig_trend.add_traces(px.scatter(df_filtered, y=actual_data_col, trendline="lowess", trendline_color_override="orange").data)
                     
                     fig_trend.update_layout(xaxis_title="Thứ tự sản xuất (Cuộn)", yaxis_title=actual_data_col)
