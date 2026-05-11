@@ -2,118 +2,107 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 from scipy.stats import norm
 import re
 import math
 
-# --- 1. CẤU HÌNH GIAO DIỆN CHUẨN EXECUTIVE DASHBOARD ---
-st.set_page_config(page_title="Line 4 Quality Analytics Dashboard", layout="wide")
+# --- 1. CẤU HÌNH GIAO DIỆN EXECUTIVE DASHBOARD ---
+st.set_page_config(page_title="Line 4 Quality Dashboard", layout="wide")
 
 st.markdown("""
     <style>
-    /* Nền Slate nhạt tạo chiều sâu */
-    .main { background-color: #f4f7f9; }
+    .main { background-color: #F8F9FB; }
     
-    /* Thiết kế thẻ Card cho biểu đồ */
+    /* Thiết kế thẻ Card cho biểu đồ - Sạch sẽ & Sang trọng */
     div.stPlotlyChart {
         background-color: #ffffff;
-        padding: 25px;
+        padding: 20px;
         border-radius: 12px;
-        border: 1px solid #e1e4e8;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        border: 1px solid #E2E8F0;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
         margin-bottom: 25px;
     }
     
-    /* KPI Metric Cards */
+    /* Thẻ KPI chuẩn BI */
     div[data-testid="stMetric"] {
         background-color: #ffffff;
-        border-top: 5px solid #113763;
+        border-top: 4px solid #1A365D;
         border-radius: 8px;
         padding: 15px;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
     
-    /* Font chữ chuyên nghiệp */
     h1, h2, h3 { 
-        color: #113763 !important; 
-        font-family: 'Segoe UI', sans-serif !important; 
-        font-weight: 800 !important;
+        color: #1A365D !important; 
+        font-family: 'Inter', sans-serif !important; 
+        font-weight: 700 !important;
     }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. HÀM XỬ LÝ DỮ LIỆU THÔNG MINH ---
-def find_data_col(df, key):
-    """Tìm cột dữ liệu thực tế (không chứa từ khóa giới hạn)"""
+# --- 2. LOGIC TÌM KIẾM DỮ LIỆU ---
+def find_actual_col(df, key):
     for col in df.columns:
         if re.search(key, col, re.IGNORECASE) and not any(kw in col for kw in ["管制", "規格", "要求"]):
             return col
     return None
 
-def get_valid_limit(df, keyword, limit_type, category):
-    """Lấy giá trị giới hạn trung vị, bỏ qua nếu <= 0 hoặc trống"""
+def fetch_limit(df, keyword, limit_type, category):
     col = next((c for c in df.columns if keyword in c and limit_type in c.lower() and category in c), None)
     if col:
         val = pd.to_numeric(df[col], errors='coerce').median()
         return float(val) if pd.notnull(val) and val > 0 else None
     return None
 
-# --- 3. THANH BÊN (SIDEBAR) ---
-st.sidebar.header("📂 HỆ THỐNG DỮ LIỆU")
-uploaded_file = st.sidebar.file_uploader("Tải file Excel/CSV báo cáo Line 4", type=["xlsx", "csv", "xls"])
+# --- 3. SIDEBAR ---
+st.sidebar.header("📂 Nguồn dữ liệu")
+file = st.sidebar.file_uploader("Tải file Excel/CSV báo cáo Line 4", type=["xlsx", "csv", "xls"])
 
-if uploaded_file:
+if file:
     try:
-        # Đọc và làm sạch tên cột
-        df_raw = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
+        df_raw = pd.read_csv(file) if file.name.endswith('.csv') else pd.read_excel(file)
         df_raw.columns = [re.sub(r'\s+', ' ', str(c)).strip() for c in df_raw.columns]
 
-        # Bộ lọc 用途碼 (Usage Code)
         if "用途碼" in df_raw.columns:
             usage_list = sorted(df_raw["用途碼"].dropna().unique().tolist())
-            selected_usages = st.sidebar.multiselect("Lọc mã ứng dụng (用途碼):", options=usage_list, default=usage_list)
+            selected_usages = st.sidebar.multiselect("Lọc 用途碼:", options=usage_list, default=usage_list)
             df = df_raw[df_raw["用途碼"].isin(selected_usages)]
         else:
             df = df_raw
 
-        # Danh mục thông số
         metrics_map = {"YS (降伏強度)": "YS", "TS (抗拉強度)": "TS", "EL (伸長率)": "EL", "Hardness (硬度)": "HRB"}
-        available = [k for k, v in metrics_map.items() if find_data_col(df, v)]
+        available = [k for k, v in metrics_map.items() if find_actual_col(df, v)]
         
         if not available:
-            st.error("❌ Không tìm thấy các cột dữ liệu YS, TS, EL... phù hợp.")
+            st.error("Không tìm thấy dữ liệu phù hợp.")
             st.stop()
 
-        selected_label = st.sidebar.selectbox("Thông số phân tích:", available)
-        view_mode = st.sidebar.radio("Chế độ hiển thị:", ["Phân tích Tổng thể (View 1)", "Kiểm soát SPC I-MR (View 2)"])
+        metric_label = st.sidebar.selectbox("Thông số hiển thị:", available)
         
-        # Lấy thông số cụ thể
-        short_key = metrics_map[selected_label]
-        data_col = find_data_col(df, short_key)
-        zh_key = "降伏強度" if "YS" in short_key else "抗拉強度" if "TS" in short_key else "伸長率" if "EL" in short_key else "硬度"
+        # Xử lý thông số
+        short_k = metrics_map[metric_label]
+        data_c = find_actual_col(df, short_k)
+        zh_k = "降伏強度" if "YS" in short_k else "抗拉強度" if "TS" in short_k else "伸長率" if "EL" in short_k else "硬度"
         
-        # Trích xuất 2 tầng giới hạn
-        v_lsl_int = get_valid_limit(df, zh_key, "min", "管制")
-        v_usl_int = get_valid_limit(df, zh_key, "max", "管制")
-        v_lsl_cust = get_valid_limit(df, zh_key, "min", "客戶要求")
-        v_usl_cust = get_valid_limit(df, zh_key, "max", "客戶要求")
+        # Giới hạn
+        v_lsl_int = fetch_limit(df, zh_k, "min", "管制")
+        v_usl_int = fetch_limit(df, zh_k, "max", "管制")
+        v_lsl_cust = fetch_limit(df, zh_k, "min", "客戶要求")
+        v_usl_cust = fetch_limit(df, zh_k, "max", "客戶要求")
 
-        if data_col:
-            plot_data = pd.to_numeric(df[data_col], errors='coerce').dropna().reset_index(drop=True)
-            n, mu, sigma = len(plot_data), plot_data.mean(), plot_data.std()
+        if data_c:
+            raw_vals = pd.to_numeric(df[data_c], errors='coerce').dropna().reset_index(drop=True)
+            n, mu, sigma = len(raw_vals), raw_vals.mean(), raw_vals.std()
             ucl, lcl = mu + 3*sigma, mu - 3*sigma
 
-            # --- GIAO DIỆN CHÍNH ---
-            st.title(f"LINE 4 ANALYTICS: {selected_label}")
+            st.title(f"🚀 LINE 4 QUALITY: {metric_label}")
 
-            # Hàng KPI Metrics
+            # --- KHỐI KPI - ĐƯA THÔNG SỐ RA NGOÀI BIỂU ĐỒ ---
             k1, k2, k3, k4 = st.columns(4)
-            k1.metric("Tổng số mẫu (N)", n)
+            k1.metric("Số mẫu (N)", n)
             k2.metric("Trung bình (μ)", f"{mu:.2f}")
             k3.metric("Độ lệch (σ)", f"{sigma:.2f}")
             
-            # Tính Cpk (Dựa trên giới hạn khách hàng hoặc nội bộ)
             t_lsl = v_lsl_cust if v_lsl_cust else v_lsl_int
             t_usl = v_usl_cust if v_usl_cust else v_usl_int
             cpk = None
@@ -121,88 +110,71 @@ if uploaded_file:
                 if t_lsl and t_usl: cpk = min((t_usl-mu)/(3*sigma), (mu-t_lsl)/(3*sigma))
                 elif t_lsl: cpk = (mu - t_lsl)/(3*sigma)
                 elif t_usl: cpk = (t_usl - mu)/(3*sigma)
-            k4.metric("Năng lực Cpk", f"{cpk:.2f}" if cpk else "N/A", delta="Đạt" if cpk and cpk >= 1.33 else "Cảnh báo" if cpk else None)
+            k4.metric("Chỉ số Cpk", f"{cpk:.2f}" if cpk else "N/A")
 
-            # --- VIEW 1: PHÂN BỐ & TRENDING (STACKED) ---
-            if "View 1" in view_mode:
-                
-                # 1. BIỂU ĐỒ PHÂN BỐ (Bố cục 100% chiều ngang)
-                st.subheader("I. Trạng thái phân bố & Khả năng đáp ứng")
-                
-                k_bins = math.ceil(1 + 3.322 * math.log10(n)) if n > 0 else 10
-                pts = [plot_data.min(), plot_data.max()]
-                all_lims = [v for v in [v_lsl_cust, v_usl_cust, v_lsl_int, v_usl_int, lcl, ucl] if v]
-                pts.extend(all_lims)
-                x_range = [min(pts) * 0.98, max(pts) * 1.02]
+            # --- PHẦN 1: PHÂN BỐ (HISTOGRAM) ---
+            st.subheader("I. Trạng thái phân bố & Đường chuẩn")
+            
+            k_bins = math.ceil(1 + 3.322 * math.log10(n)) if n > 0 else 10
+            pts = [raw_vals.min(), raw_vals.max()]
+            all_l = [v for v in [v_lsl_cust, v_usl_cust, v_lsl_int, v_usl_int, lcl, ucl] if v]
+            pts.extend(all_l)
+            x_rng = [min(pts) * 0.98, max(pts) * 1.02]
 
-                fig_dist = go.Figure()
-                fig_dist.add_trace(go.Histogram(x=plot_data, nbinsx=k_bins, marker_color='#3498db', opacity=0.7))
-                
-                if sigma > 0:
-                    bin_w = (plot_data.max() - plot_data.min()) / k_bins if n > 1 else 1
-                    x_c = np.linspace(x_range[0], x_range[1], 400)
-                    y_c = norm.pdf(x_c, mu, sigma) * n * bin_w
-                    fig_dist.add_trace(go.Scatter(x=x_c, y=y_c, mode='lines', line=dict(color='#113763', width=3)))
+            fig_dist = go.Figure()
+            # Histogram
+            fig_dist.add_trace(go.Histogram(x=raw_vals, nbinsx=k_bins, marker_color='#3182CE', opacity=0.7))
+            
+            # Normal Curve
+            if sigma > 0:
+                bin_width = (raw_vals.max() - raw_vals.min()) / k_bins if n > 1 else 1
+                xc = np.linspace(x_rng[0], x_rng[1], 400)
+                yc = norm.pdf(xc, mu, sigma) * n * bin_width
+                fig_dist.add_trace(go.Scatter(x=xc, y=yc, mode='lines', line=dict(color='#2C5282', width=3)))
 
-                # Vẽ các giới hạn lên Phân bố (Nhãn dọc để không che dữ liệu)
-                limit_hist = [
-                    (v_lsl_cust, "KHÁCH MIN", "#d32f2f", "dash"),
-                    (v_usl_cust, "KHÁCH MAX", "#d32f2f", "dash"),
-                    (v_lsl_int, "Nội bộ Min", "#795548", "dot"),
-                    (v_usl_int, "Nội bộ Max", "#795548", "dot")
-                ]
-                for v, lbl, clr, sty in limit_hist:
-                    if v:
-                        fig_dist.add_vline(x=v, line_dash=sty, line_color=clr, line_width=2)
-                        fig_dist.add_annotation(x=v, y=1, yref="paper", text=f"<b>{lbl}: {v}</b>", 
-                                              textangle=-90, font=dict(color=clr), bgcolor="white", showarrow=False)
+            # Giới hạn trên Histogram - Nhãn đặt ở trên để tránh che dữ liệu
+            h_limits = [(v_lsl_cust, "KHÁCH MIN", "#E53E3E"), (v_usl_cust, "KHÁCH MAX", "#E53E3E"),
+                        (v_lsl_int, "Nội bộ Min", "#744210"), (v_usl_int, "Nội bộ Max", "#744210")]
+            
+            for v, lbl, clr in h_limits:
+                if v:
+                    fig_dist.add_vline(x=v, line_dash="dash", line_color=clr, line_width=2)
+                    fig_dist.add_annotation(x=v, y=1, yref="paper", text=f"<b>{lbl}: {v}</b>", 
+                                          textangle=-90, font=dict(color=clr), bgcolor="white", showarrow=False)
 
-                fig_dist.update_layout(template="simple_white", height=450, xaxis_range=x_range, showlegend=False, 
-                                      yaxis_title="Số lượng cuộn thép (Coils)", xaxis_title=f"Giá trị {selected_label}")
-                st.plotly_chart(fig_dist, use_container_width=True)
+            fig_dist.update_layout(template="simple_white", height=450, xaxis_range=x_rng, showlegend=False, 
+                                  yaxis_title="Số lượng cuộn", xaxis_title=f"Giá trị thực tế")
+            st.plotly_chart(fig_dist, use_container_width=True)
 
-                # 2. BIỂU ĐỒ TRENDING (Bố cục 100% chiều ngang)
-                st.subheader("II. Xu hướng sản xuất & Các tầng giới hạn")
-                fig_trend = go.Figure()
-                fig_trend.add_trace(go.Scatter(x=plot_data.index, y=plot_data, mode='lines+markers', 
-                                              line=dict(color='#3498db', width=1.5),
-                                              marker=dict(size=6, color='white', line=dict(width=1.5, color='#3498db'))))
+            # --- PHẦN 2: TRENDING (BIỂU ĐỒ XU HƯỚNG) ---
+            st.subheader("II. Xu hướng sản xuất & Giới hạn đa tầng")
+            fig_trend = go.Figure()
+            fig_trend.add_trace(go.Scatter(x=raw_vals.index, y=raw_vals, mode='lines+markers', 
+                                          line=dict(color='#3182CE', width=1.5),
+                                          marker=dict(size=6, color='white', line=dict(width=1.5, color='#3182CE'))))
 
-                # Danh sách đường giới hạn trên Trending (Offset nhãn để không chồng nhau)
-                trend_lines = [
-                    (mu, "MEAN", "green", "solid", 1.01),
-                    (ucl, "UCL", "#FB8C00", "dash", 1.01),
-                    (lcl, "LCL", "#FB8C00", "dash", 1.01),
-                    (v_usl_int, "Int Max", "#795548", "dot", 1.09),
-                    (v_lsl_int, "Int Min", "#795548", "dot", 1.09),
-                    (v_usl_cust, "KHÁCH MAX", "#d32f2f", "dashdot", 1.18),
-                    (v_lsl_cust, "KHÁCH MIN", "#d32f2f", "dashdot", 1.18)
-                ]
+            # Nhãn Trending đẩy hẳn sang lề phải (r=250) để không che điểm dữ liệu
+            t_limits = [
+                (mu, "MEAN", "green", "solid", 1.01),
+                (ucl, "UCL", "#DD6B20", "dash", 1.01),
+                (lcl, "LCL", "#DD6B20", "dash", 1.01),
+                (v_usl_int, "Int Max", "#744210", "dot", 1.10),
+                (v_lsl_int, "Int Min", "#744210", "dot", 1.10),
+                (v_usl_cust, "SPEC MAX", "#E53E3E", "dashdot", 1.20),
+                (v_lsl_cust, "SPEC MIN", "#E53E3E", "dashdot", 1.20)
+            ]
 
-                for v, lbl, clr, sty, pos in trend_lines:
-                    if v:
-                        fig_trend.add_hline(y=v, line_dash=sty, line_color=clr, line_width=2)
-                        fig_trend.add_annotation(x=pos, y=v, xref="paper", text=f"<b>{lbl}: {v:.1f}</b>",
-                                               showarrow=False, font=dict(color=clr, size=10), xanchor="left")
+            for v, lbl, clr, sty, pos in t_limits:
+                if v:
+                    fig_trend.add_hline(y=v, line_dash=sty, line_color=clr, line_width=2)
+                    fig_trend.add_annotation(x=pos, y=v, xref="paper", text=f"<b>{lbl}: {v:.1f}</b>",
+                                           showarrow=False, font=dict(color=clr, size=10), xanchor="left")
 
-                fig_trend.update_layout(template="simple_white", height=500, margin=dict(r=250), showlegend=False,
-                                       xaxis_title="Thứ tự cuộn (Sequence)", yaxis_title="Giá trị đo thực tế")
-                st.plotly_chart(fig_trend, use_container_width=True)
-
-            # --- VIEW 2: SPC I-MR ---
-            else:
-                st.subheader("Biểu đồ kiểm soát SPC I-MR")
-                mr = plot_data.diff().abs()
-                fig_imr = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, subplot_titles=("I-Chart", "MR-Chart"))
-                fig_imr.add_trace(go.Scatter(y=plot_data, mode='lines+markers'), row=1, col=1)
-                fig_imr.add_hline(y=ucl, line_dash="dash", line_color="red", row=1, col=1)
-                fig_imr.add_hline(y=lcl, line_dash="dash", line_color="red", row=1, col=1)
-                fig_imr.add_hline(y=mu, line_color="green", row=1, col=1)
-                fig_imr.add_trace(go.Scatter(y=mr, mode='lines+markers', line=dict(color='orange')), row=2, col=1)
-                fig_imr.update_layout(height=750, template="simple_white", showlegend=False)
-                st.plotly_chart(fig_imr, use_container_width=True)
+            fig_trend.update_layout(template="simple_white", height=500, margin=dict(r=250), showlegend=False,
+                                   xaxis_title="Thứ tự cuộn sản xuất", yaxis_title="Giá trị đo")
+            st.plotly_chart(fig_trend, use_container_width=True)
 
     except Exception as e:
-        st.error(f"Lỗi hệ thống: {e}")
+        st.error(f"Lỗi: {e}")
 else:
-    st.info("👈 Vui lòng tải file Excel lên thanh Sidebar để bắt đầu báo cáo.")
+    st.info("👈 Hãy tải file báo cáo Excel ở Sidebar để bắt đầu.")
