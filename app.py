@@ -33,22 +33,9 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-export_config = {
-    'displayModeBar': True, 
-    'displaylogo': False,
-    'toImageButtonOptions': {'format': 'png', 'filename': 'Quality_Report', 'height': 700, 'width': 1200, 'scale': 2}
-}
-
 # ==========================================
-# 2. CACHING & UTILITY FUNCTIONS
+# 2. UTILITY FUNCTIONS
 # ==========================================
-# TỐI ƯU 1: CACHE DỮ LIỆU ĐỂ APP KHÔNG ĐỌC LẠI FILE EXCEL LIÊN TỤC
-@st.cache_data
-def load_and_clean_data(file):
-    df = pd.read_csv(file) if file.name.endswith('.csv') else pd.read_excel(file)
-    df.columns = [re.sub(r'\s+', ' ', str(c)).strip() for c in df.columns]
-    return df
-
 def find_data_col(df, key):
     for col in df.columns:
         if re.search(key, col, re.IGNORECASE) and not any(kw in col for kw in ["管制", "規格", "要求"]):
@@ -62,33 +49,23 @@ def get_limit(df, keyword, limit_type, category):
         return float(val) if pd.notnull(val) and val > 0 else None
     return None
 
-# TỐI ƯU 2: KÉO CÁC HÀM VẼ BIỂU ĐỒ RA NGOÀI ĐỂ TÁI SỬ DỤNG
-def add_smart_line(fig, axis, val, name, color, dash, pos):
-    """Hàm chung để vẽ đường ngang (y) hoặc dọc (x) sắc nét"""
-    if val is None: return
-    
-    line_args = dict(line_dash=dash, line_color=color, line_width=2.5, opacity=1,
-                     annotation_text=f"<b>{name}:<br>{val:.1f}</b>" if axis == 'x' else f"<b>{name}: {val:.1f}</b>",
-                     annotation_position=pos,
-                     annotation_font=dict(size=11, color=color),
-                     annotation_bgcolor="rgba(255,255,255,0.85)")
-    
-    if axis == 'x':
-        fig.add_vline(x=val, **line_args)
-    else:
-        fig.add_hline(y=val, **line_args)
+export_config = {
+    'displayModeBar': True, 
+    'displaylogo': False,
+    'toImageButtonOptions': {'format': 'png', 'filename': 'Quality_Report', 'height': 700, 'width': 1200, 'scale': 2}
+}
 
 # ==========================================
-# 3. SIDEBAR & MAIN LOGIC
+# 3. SIDEBAR & DATA PROCESSING
 # ==========================================
 st.sidebar.header("📂 DATA SOURCE")
 uploaded_file = st.sidebar.file_uploader("Upload Excel/CSV Report", type=["xlsx", "csv", "xls"])
 
 if uploaded_file:
     try:
-        df_raw = load_and_clean_data(uploaded_file)
+        df_raw = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
+        df_raw.columns = [re.sub(r'\s+', ' ', str(c)).strip() for c in df_raw.columns]
 
-        # Filter usage
         if "用途碼" in df_raw.columns:
             usage_list = sorted(df_raw["用途碼"].dropna().unique().tolist())
             selected_usages = st.sidebar.multiselect("Filter Usage Code:", options=usage_list, default=usage_list)
@@ -96,7 +73,6 @@ if uploaded_file:
         else:
             df = df_raw
 
-        # Parameter mapping
         metrics_map = {"YS": "YS", "TS": "TS", "EL": "EL", "Hardness": "HRB", "YPE": "YPE"}
         available = [k for k, v in metrics_map.items() if find_data_col(df, v)]
         
@@ -105,6 +81,7 @@ if uploaded_file:
             st.stop()
 
         selected_label = st.sidebar.selectbox("Select Parameter:", available)
+        view_mode = st.sidebar.radio("View Mode:", ["Process Analytics", "SPC Control Charts"])
         
         short_key = metrics_map[selected_label]
         data_col = find_data_col(df, short_key)
@@ -118,179 +95,104 @@ if uploaded_file:
 
         if data_col:
             plot_data = pd.to_numeric(df[data_col], errors='coerce').dropna().reset_index(drop=True)
-            n = len(plot_data)
-            
-            # TỐI ƯU 4: KIỂM TRA LỖI DỮ LIỆU QUÁ ÍT
-            if n < 2:
-                st.warning("⚠️ Cần ít nhất 2 mẫu dữ liệu để thực hiện phân tích thống kê.")
-                st.stop()
-                
-            mu, sigma = plot_data.mean(), plot_data.std()
+            n, mu, sigma = len(plot_data), plot_data.mean(), plot_data.std()
             ucl, lcl = mu + 3*sigma, mu - 3*sigma
 
-            cp, cpk = None, None
-            if sigma > 0:
-                if v_lsl_std and v_usl_std:
-                    cp = (v_usl_std - v_lsl_std) / (6 * sigma)
-                    cpk = min((v_usl_std - mu)/(3*sigma), (mu - v_lsl_std)/(3*sigma))
-                elif v_lsl_std: cpk = (mu - v_lsl_std)/(3*sigma)
-                elif v_usl_std: cpk = (v_usl_std - mu)/(3*sigma)
+            cpk = None
+            if sigma > 0 and v_lsl_std and v_usl_std:
+                cpk = min((v_usl_std - mu)/(3*sigma), (mu - v_lsl_std)/(3*sigma))
 
-            # --- TOP KPI METRICS ---
             st.title(f"📊 Quality Analytics: {selected_label}")
             k1, k2, k3, k4 = st.columns(4)
             k1.metric("Samples (N)", n)
             k2.metric("Mean (μ)", f"{mu:.2f}")
             k3.metric("Std Dev (σ)", f"{sigma:.2f}")
-            status = "Pass" if cpk and cpk >= 1.33 else "Warning"
-            k4.metric("Cpk (Internal)", f"{cpk:.2f}" if cpk else "N/A", delta=status if cpk else None)
+            k4.metric("Cpk (Internal)", f"{cpk:.2f}" if cpk else "N/A")
 
-            # TỐI ƯU 3: DÙNG TABS THAY VÌ RADIO BUTTON
-            tab1, tab2 = st.tabs(["📈 Process Analytics", "📊 SPC Control Charts (I-MR)"])
+            # ==========================================
+            # CHẾ ĐỘ 1: PROCESS ANALYTICS
+            # ==========================================
+            if view_mode == "Process Analytics":
+                st.subheader("I. Distribution & Capability")
+                k_bins = math.ceil(1 + 3.322 * math.log10(n)) if n > 0 else 10
+                pts = [v for v in [v_lsl_tgt, v_usl_tgt, v_lsl_std, v_usl_std, plot_data.min(), plot_data.max()] if v is not None]
+                x_range = [min(pts)*0.95, max(pts)*1.05]
 
-            with tab1:
-                col1, col2 = st.columns([1, 1])
+                fig_dist = go.Figure()
+                fig_dist.add_trace(go.Histogram(x=plot_data, nbinsx=k_bins, marker_color='#7FB3D5', opacity=0.8, marker_line_color='white'))
                 
-                # --- CHART 1: DISTRIBUTION ---
-                with col1:
-                    st.subheader("I. Distribution & Capability")
-                    k_bins = math.ceil(1 + 3.322 * math.log10(n)) if n > 0 else 10
-                    pts = [v for v in [v_lsl_tgt, v_usl_tgt, v_lsl_std, v_usl_std, plot_data.min(), plot_data.max()] if v is not None]
-                    x_range = [min(pts) - abs(min(pts)*0.1), max(pts) + abs(max(pts)*0.1)]
+                def add_smart_vline(fig, val, name, color, dash, pos):
+                    if val is not None:
+                        fig.add_vline(x=val, line_dash=dash, line_color=color, line_width=2.5,
+                                    annotation_text=f"<b>{name}:<br>{val:.1f}</b>", annotation_position=pos,
+                                    annotation_font=dict(size=10, color=color), annotation_bgcolor="rgba(255,255,255,0.85)")
 
-                    fig_dist = go.Figure()
-                    fig_dist.add_trace(go.Histogram(x=plot_data, nbinsx=k_bins, name='Data', marker_color='#7FB3D5', opacity=0.8, marker_line_color='white', marker_line_width=1))
-                    
-                    if sigma > 0:
-                        x_c = np.linspace(x_range[0], x_range[1], 200)
-                        y_c = norm.pdf(x_c, mu, sigma) * n * ((plot_data.max() - plot_data.min()) / k_bins)
-                        fig_dist.add_trace(go.Scatter(x=x_c, y=y_c, mode='lines', name='Normal', line=dict(color='#1E3A8A', width=2)))
+                add_smart_vline(fig_dist, v_lsl_tgt, "Cust LSL", "#2E7D32", "solid", "top left")
+                add_smart_vline(fig_dist, v_usl_tgt, "Cust USL", "#2E7D32", "solid", "top right")
+                add_smart_vline(fig_dist, v_lsl_std, "Int LSL", "#D32F2F", "dash", "top right")
+                add_smart_vline(fig_dist, v_usl_std, "Int USL", "#D32F2F", "dash", "top left")
 
-                    add_smart_line(fig_dist, 'x', v_lsl_tgt, "Cust LSL", "#2E7D32", "solid", "top left")
-                    add_smart_line(fig_dist, 'x', v_usl_tgt, "Cust USL", "#2E7D32", "solid", "top right")
-                    add_smart_line(fig_dist, 'x', v_lsl_std, "Int LSL", "#D32F2F", "dash", "top right")
-                    add_smart_line(fig_dist, 'x', v_usl_std, "Int USL", "#D32F2F", "dash", "top left")
+                # SỬA KHUNG VIỀN: mirror=True tạo hình hộp kín
+                fig_dist.update_layout(template="simple_white", height=500, xaxis_range=x_range, margin=dict(t=80, b=40, l=40, r=40))
+                fig_dist.update_xaxes(showline=True, linewidth=2, linecolor='black', mirror=True)
+                fig_dist.update_yaxes(showline=True, linewidth=2, linecolor='black', mirror=True)
+                st.plotly_chart(fig_dist, use_container_width=True)
 
-                    fig_dist.update_layout(template="simple_white", height=550, xaxis_range=x_range, showlegend=False, margin=dict(t=80))
-                    fig_dist.update_xaxes(showline=True, linewidth=1.5, linecolor='black', mirror=True)
-                    fig_dist.update_yaxes(showline=True, linewidth=1.5, linecolor='black', mirror=True)
-                    st.plotly_chart(fig_dist, use_container_width=True, config=export_config)
+                st.subheader("II. Trend Analysis")
+                fig_trend = go.Figure()
+                fig_trend.add_trace(go.Scatter(y=plot_data, mode='lines+markers', line=dict(color='#1F77B4', width=2), marker=dict(size=7)))
+                
+                def add_smart_hline(fig, val, name, color, dash, pos):
+                    if val is not None:
+                        fig.add_hline(y=val, line_dash=dash, line_color=color, line_width=2.5,
+                                    annotation_text=f"<b>{name}: {val:.1f}</b>", annotation_position=pos,
+                                    annotation_font=dict(size=10, color=color), annotation_bgcolor="rgba(255,255,255,0.85)")
 
-                # --- CHART 2: TREND BY SEQUENCE ---
-                with col2:
-                    st.subheader("II. Trend Analysis")
-                    fig_trend = go.Figure()
+                add_smart_hline(fig_trend, v_usl_tgt, "Cust USL", "#2E7D32", "solid", "top right")
+                add_smart_hline(fig_trend, v_lsl_std, "Int LSL", "#D32F2F", "dash", "top right")
+                add_smart_hline(fig_trend, mu, "Mean", "#8E44AD", "dashdot", "top left")
 
-                    if v_lsl_tgt and v_usl_tgt:
-                        fig_trend.add_hrect(y0=v_lsl_tgt, y1=v_usl_tgt, fillcolor="#E8F5E9", opacity=0.4, layer="below", line_width=0)
+                # SỬA KHUNG VIỀN: mirror=True tạo hình hộp kín
+                fig_trend.update_layout(template="simple_white", height=600, margin=dict(t=50, r=20, l=40, b=40))
+                fig_trend.update_xaxes(showline=True, linewidth=2, linecolor='black', mirror=True)
+                fig_trend.update_yaxes(showline=True, linewidth=2, linecolor='black', mirror=True)
+                st.plotly_chart(fig_trend, use_container_width=True)
 
-                    add_smart_line(fig_trend, 'y', v_usl_tgt, "Cust USL", "#2E7D32", "solid", "top right")
-                    add_smart_line(fig_trend, 'y', v_usl_std, "Int USL", "#D32F2F", "dash", "bottom right")
-                    add_smart_line(fig_trend, 'y', v_lsl_tgt, "Cust LSL", "#2E7D32", "solid", "bottom right")
-                    add_smart_line(fig_trend, 'y', v_lsl_std, "Int LSL", "#D32F2F", "dash", "top right")
-                    add_smart_line(fig_trend, 'y', ucl, "UCL", "#E67E22", "dot", "top left")
-                    add_smart_line(fig_trend, 'y', lcl, "LCL", "#E67E22", "dot", "bottom left")
-                    add_smart_line(fig_trend, 'y', mu, "Mean", "#8E44AD", "dashdot", "top left")
-
-                    fig_trend.add_trace(go.Scatter(x=plot_data.index, y=plot_data, mode='lines+markers', name='Data',
-                                                line=dict(color='#1F77B4', width=2), marker=dict(size=7, symbol='circle', color='#1F77B4')))
-                    
-                    usl_limit = v_usl_std if v_usl_std is not None else (v_usl_tgt if v_usl_tgt is not None else float('inf'))
-                    lsl_limit = v_lsl_std if v_lsl_std is not None else (v_lsl_tgt if v_lsl_tgt is not None else float('-inf'))
-                    ooc = plot_data[(plot_data > usl_limit) | (plot_data < lsl_limit)]
-                    if not ooc.empty:
-                        fig_trend.add_trace(go.Scatter(x=ooc.index, y=ooc, mode='markers', name='Out of Spec', 
-                                                    marker=dict(color='#D32F2F', size=9, symbol='circle', line=dict(color='white', width=1))))
-
-                    fig_trend.update_layout(template="simple_white", height=550, margin=dict(t=50, r=20), showlegend=False)
-                    fig_trend.update_xaxes(showline=True, linewidth=1.5, linecolor='black', mirror=True)
-                    fig_trend.update_yaxes(showline=True, linewidth=1.5, linecolor='black', mirror=True)
-                    st.plotly_chart(fig_trend, use_container_width=True, config=export_config)
-
-            with tab2:
-                # --- CHART 3: SPC I-MR ---
+            # ==========================================
+            # CHẾ ĐỘ 2: SPC I-MR
+            # ==========================================
+            else:
                 st.subheader("III. Statistical Process Control (I-MR)")
-                
-                # Tính toán Moving Range (MR) và các giới hạn
                 mr = plot_data.diff().abs()
-                mr_mean = mr.mean()
-                mr_ucl = mr_mean * 3.267
-
-                # Tăng vertical_spacing lên 0.15 để tạo khoảng trống, không bị đè tiêu đề
-                fig_imr = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.15, 
+                mr_ucl = mr.mean() * 3.267
+                fig_imr = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.15,
                                       subplot_titles=("Individual Chart (I)", "Moving Range Chart (MR)"))
                 
-                # -----------------------------
-                # 1. BIỂU ĐỒ INDIVIDUAL (I)
-                # -----------------------------
-                fig_imr.add_trace(go.Scatter(
-                    x=plot_data.index, y=plot_data, mode='lines+markers', 
-                    name='Data (I)', line=dict(color='#1F77B4', width=2), marker=dict(size=7, symbol='circle')
-                ), row=1, col=1)
-                
-                # Đánh dấu ĐỎ các điểm vượt giới hạn UCL / LCL của biểu đồ I
-                ooc_i = plot_data[(plot_data > ucl) | (plot_data < lcl)]
-                if not ooc_i.empty:
-                    fig_imr.add_trace(go.Scatter(
-                        x=ooc_i.index, y=ooc_i, mode='markers', name='OOC (I)',
-                        marker=dict(color='#D32F2F', size=9, symbol='circle', line=dict(color='white', width=1))
-                    ), row=1, col=1)
+                fig_imr.add_trace(go.Scatter(y=plot_data, mode='lines+markers', name='I'), row=1, col=1)
+                fig_imr.add_trace(go.Scatter(y=mr, mode='lines+markers', name='MR'), row=2, col=1)
 
-                # -----------------------------
-                # 2. BIỂU ĐỒ MOVING RANGE (MR)
-                # -----------------------------
-                fig_imr.add_trace(go.Scatter(
-                    x=mr.index, y=mr, mode='lines+markers', 
-                    name='Data (MR)', line=dict(color='#1F77B4', width=2), marker=dict(size=7, symbol='circle')
-                ), row=2, col=1)
-
-                # Đánh dấu ĐỎ các điểm vượt giới hạn UCL của biểu đồ MR
-                ooc_mr = mr[mr > mr_ucl]
-                if not ooc_mr.empty:
-                    fig_imr.add_trace(go.Scatter(
-                        x=ooc_mr.index, y=ooc_mr, mode='markers', name='OOC (MR)',
-                        marker=dict(color='#D32F2F', size=9, symbol='circle', line=dict(color='white', width=1))
-                    ), row=2, col=1)
-
-                # -----------------------------
-                # Hàm vẽ đường giới hạn IN ĐẬM
-                # -----------------------------
-                def add_imr_hline(val, label, color, row):
+                def add_imr_line(fig, val, label, color, row):
                     if val is not None:
-                        fig_imr.add_hline(
-                            y=val, line_dash="dash", line_color=color, line_width=2.5, opacity=1, # In đậm đường
-                            annotation_text=f"<b>{label}: {val:.1f}</b>", # In đậm chữ
-                            annotation_position="top right",
-                            annotation_font=dict(color=color, size=11),
-                            annotation_bgcolor="rgba(255,255,255,0.85)", 
-                            row=row, col=1
-                        )
+                        fig.add_hline(y=val, line_dash="dash", line_color=color, line_width=2.5,
+                                    annotation_text=f"<b>{label}: {val:.1f}</b>", annotation_position="top right",
+                                    annotation_font=dict(color=color), row=row, col=1)
 
-                # Gọi hàm vẽ đường cho I-Chart
-                add_imr_hline(ucl, 'UCL', '#D32F2F', 1)
-                add_imr_hline(lcl, 'LCL', '#D32F2F', 1)
-                add_imr_hline(mu, 'Mean', '#2E7D32', 1)
-                
-                # Gọi hàm vẽ đường cho MR-Chart
-                add_imr_hline(mr_mean, 'MR Mean', '#2E7D32', 2)
-                add_imr_hline(mr_ucl, 'MR UCL', '#D32F2F', 2)
+                add_imr_line(fig_imr, ucl, 'UCL', 'red', 1)
+                add_imr_line(fig_imr, lcl, 'LCL', 'red', 1)
+                add_imr_line(fig_imr, mu, 'Mean', 'green', 1)
+                add_imr_line(fig_imr, mr_ucl, 'MR UCL', 'red', 2)
 
-                # -----------------------------
-                # CẬP NHẬT GIAO DIỆN CHUNG
-                # -----------------------------
-                # Thêm margin r=80 (phải) để không bị cắt chữ, t=60 (trên) để thoáng
-                fig_imr.update_layout(height=700, template="simple_white", showlegend=False, margin=dict(l=40, r=80, t=60, b=40))
+                # SỬA KHUNG VIỀN: Áp dụng mirror cho cả các subplot
+                fig_imr.update_layout(height=750, template="simple_white", showlegend=False, margin=dict(r=80, t=60))
+                fig_imr.update_xaxes(showline=True, linewidth=2, linecolor='black', mirror=True)
+                fig_imr.update_yaxes(showline=True, linewidth=2, linecolor='black', mirror=True)
                 
-                # Vòng lặp nhỏ này giúp đẩy Tiêu đề (Subplot titles) lên cao một chút để không đè vào khung
-                for annotation in fig_imr['layout']['annotations']:
-                    annotation['y'] += 0.02 
-
-                fig_imr.update_xaxes(showline=True, linewidth=1.5, linecolor='black', mirror=True)
-                fig_imr.update_yaxes(showline=True, linewidth=1.5, linecolor='black', mirror=True)
+                # Chống tiêu đề đè lên khung
+                for ann in fig_imr['layout']['annotations']: ann['y'] += 0.03
                 
-                st.plotly_chart(fig_imr, use_container_width=True, config=export_config)
+                st.plotly_chart(fig_imr, use_container_width=True)
 
     except Exception as e:
-        st.error(f"Đã xảy ra lỗi trong quá trình xử lý: {e}")
+        st.error(f"Error: {e}")
 else:
     st.info("👈 Please upload the production data report (Excel/CSV) to begin.")
