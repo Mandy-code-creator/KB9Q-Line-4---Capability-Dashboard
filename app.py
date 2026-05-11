@@ -10,57 +10,106 @@ import math
 # ==========================================
 # 1. PAGE CONFIGURATION & STYLING
 # ==========================================
-st.set_page_config(page_title="Line 4 Quality Analytics", layout="wide")
+st.set_page_config(
+    page_title="Line 4 Quality Analytics",
+    layout="wide"
+)
 
 st.markdown("""
-    <style>
-    .main { background-color: #F8FAFC; }
+<style>
 
-    div.stPlotlyChart {
-        background-color: #ffffff;
-        padding: 12px;
-        border-radius: 10px;
-        border: 1px solid #CBD5E1;
-        box-shadow: 0 3px 6px rgba(0, 0, 0, 0.08);
-    }
+.main {
+    background-color: #F8FAFC;
+}
 
-    div[data-testid="stMetric"] {
-        background-color: #ffffff;
-        border-left: 6px solid #1E40AF;
-        border-radius: 6px;
-        padding: 12px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.08);
-    }
+div.stPlotlyChart {
+    background-color: #ffffff;
+    padding: 12px;
+    border-radius: 10px;
+    border: 1px solid #CBD5E1;
+    box-shadow: 0 3px 6px rgba(0,0,0,0.08);
+}
 
-    h1, h2, h3 {
-        color: #1E3A8A !important;
-        font-family: 'Segoe UI', sans-serif;
-        font-weight: 700;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+div[data-testid="stMetric"] {
+    background-color: #ffffff;
+    border-left: 6px solid #1E40AF;
+    border-radius: 6px;
+    padding: 12px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+}
+
+h1, h2, h3 {
+    color: #1E3A8A !important;
+    font-family: 'Segoe UI', sans-serif;
+    font-weight: 700;
+}
+
+</style>
+""", unsafe_allow_html=True)
 
 # ==========================================
 # 2. CACHING & UTILITY FUNCTIONS
 # ==========================================
 @st.cache_data
 def load_and_clean_data(file):
-    df = pd.read_csv(file) if file.name.endswith('.csv') else pd.read_excel(file)
-    df.columns = [re.sub(r'\s+', ' ', str(c)).strip() for c in df.columns]
+
+    df = (
+        pd.read_csv(file)
+        if file.name.endswith('.csv')
+        else pd.read_excel(file)
+    )
+
+    df.columns = [
+        re.sub(r'\s+', ' ', str(c)).strip()
+        for c in df.columns
+    ]
+
     return df
 
+
 def find_data_col(df, key):
+
     for col in df.columns:
-        if re.search(key, col, re.IGNORECASE) and not any(kw in col for kw in ["管制", "規格", "要求"]):
+
+        if (
+            re.search(key, col, re.IGNORECASE)
+            and not any(
+                kw in col
+                for kw in ["管制", "規格", "要求"]
+            )
+        ):
             return col
+
     return None
 
+
 def get_limit(df, keyword, limit_type, category):
-    col = next((c for c in df.columns if keyword in c and limit_type in c.lower() and category in c), None)
+
+    col = next(
+        (
+            c for c in df.columns
+            if keyword in c
+            and limit_type in c.lower()
+            and category in c
+        ),
+        None
+    )
+
     if col:
-        val = pd.to_numeric(df[col], errors='coerce').median()
-        return float(val) if pd.notnull(val) and val > 0 else None
+
+        val = pd.to_numeric(
+            df[col],
+            errors='coerce'
+        ).median()
+
+        return (
+            float(val)
+            if pd.notnull(val) and val > 0
+            else None
+        )
+
     return None
+
 
 export_config = {
     'displayModeBar': True,
@@ -87,11 +136,22 @@ uploaded_file = st.sidebar.file_uploader(
 if uploaded_file:
 
     try:
+
         df_raw = load_and_clean_data(uploaded_file)
+
         df = df_raw.copy()
 
+        # ======================================
+        # FILTER USAGE CODE
+        # ======================================
         if "用途碼" in df_raw.columns:
-            usage_list = sorted(df_raw["用途碼"].dropna().unique().tolist())
+
+            usage_list = sorted(
+                df_raw["用途碼"]
+                .dropna()
+                .unique()
+                .tolist()
+            )
 
             selected_usages = st.sidebar.multiselect(
                 "Filter Usage Code:",
@@ -99,8 +159,13 @@ if uploaded_file:
                 default=usage_list
             )
 
-            df = df_raw[df_raw["用途碼"].isin(selected_usages)]
+            df = df_raw[
+                df_raw["用途碼"].isin(selected_usages)
+            ]
 
+        # ======================================
+        # PARAMETER MAP
+        # ======================================
         metrics_map = {
             "YS": "YS",
             "TS": "TS",
@@ -124,7 +189,10 @@ if uploaded_file:
 
         view_mode = st.sidebar.radio(
             "View Mode:",
-            ["Process Analytics", "SPC Control Charts (I-MR)"]
+            [
+                "Process Analytics",
+                "SPC Control Charts (I-MR)"
+            ]
         )
 
         short_key = metrics_map[selected_label]
@@ -141,12 +209,40 @@ if uploaded_file:
 
         zh_key = zh_map.get(short_key, short_key)
 
-        v_lsl_std = get_limit(df, zh_key, "min", "管制")
-        v_usl_std = get_limit(df, zh_key, "max", "管制")
+        # ======================================
+        # LIMITS
+        # ======================================
+        v_lsl_std = get_limit(
+            df,
+            zh_key,
+            "min",
+            "管制"
+        )
 
-        v_lsl_tgt = get_limit(df, zh_key, "min", "客戶要求")
-        v_usl_tgt = get_limit(df, zh_key, "max", "客戶要求")
+        v_usl_std = get_limit(
+            df,
+            zh_key,
+            "max",
+            "管制"
+        )
 
+        v_lsl_tgt = get_limit(
+            df,
+            zh_key,
+            "min",
+            "客戶要求"
+        )
+
+        v_usl_tgt = get_limit(
+            df,
+            zh_key,
+            "max",
+            "客戶要求"
+        )
+
+        # ======================================
+        # MAIN DATA
+        # ======================================
         if data_col:
 
             plot_data = pd.to_numeric(
@@ -155,10 +251,13 @@ if uploaded_file:
             ).dropna().reset_index(drop=True)
 
             n = len(plot_data)
+
             mu = plot_data.mean()
+
             sigma = plot_data.std()
 
             ucl = mu + 3 * sigma
+
             lcl = mu - 3 * sigma
 
             cpk = (
@@ -166,32 +265,47 @@ if uploaded_file:
                     (v_usl_std - mu) / (3 * sigma),
                     (mu - v_lsl_std) / (3 * sigma)
                 )
-                if sigma > 0 and v_usl_std and v_lsl_std
+                if sigma > 0
+                and v_usl_std
+                and v_lsl_std
                 else None
             )
 
-            st.title(f"📊 Quality Analytics: {selected_label}")
+            # ==================================
+            # HEADER
+            # ==================================
+            st.title(
+                f"📊 Quality Analytics: {selected_label}"
+            )
 
             k1, k2, k3, k4 = st.columns(4)
 
             k1.metric("Samples (N)", n)
+
             k2.metric("Mean (μ)", f"{mu:.2f}")
+
             k3.metric("Std Dev (σ)", f"{sigma:.2f}")
+
             k4.metric(
                 "Cpk (Internal)",
                 f"{cpk:.2f}" if cpk else "N/A"
             )
 
-            # ======================================================
+            # ==================================
             # PROCESS ANALYTICS
-            # ======================================================
+            # ==================================
             if view_mode == "Process Analytics":
 
-                st.subheader("I. Distribution & Capability")
+                st.subheader(
+                    "I. Distribution & Capability"
+                )
 
                 k_bins = (
-                    math.ceil(1 + 3.322 * math.log10(n))
-                    if n > 0 else 10
+                    math.ceil(
+                        1 + 3.322 * math.log10(n)
+                    )
+                    if n > 0
+                    else 10
                 )
 
                 pts = [
@@ -211,9 +325,11 @@ if uploaded_file:
                     max(pts) + abs(max(pts) * 0.1)
                 ]
 
+                # ==================================
+                # DISTRIBUTION CHART
+                # ==================================
                 fig_dist = go.Figure()
 
-                # HISTOGRAM
                 fig_dist.add_trace(
                     go.Histogram(
                         x=plot_data,
@@ -239,7 +355,8 @@ if uploaded_file:
                         mu,
                         sigma
                     ) * n * (
-                        (plot_data.max() - plot_data.min()) / k_bins
+                        (plot_data.max() - plot_data.min())
+                        / k_bins
                     )
 
                     fig_dist.add_trace(
@@ -254,8 +371,15 @@ if uploaded_file:
                         )
                     )
 
-                # LIMIT LINES
-                def add_dist_vline(val, name, color, dash, pos):
+                # ==================================
+                # LIMIT LINE FUNCTION
+                # ==================================
+                def add_dist_vline(
+                    val,
+                    name,
+                    color,
+                    dash
+                ):
 
                     if val is not None:
 
@@ -264,58 +388,64 @@ if uploaded_file:
                             line_dash=dash,
                             line_color=color,
                             line_width=5,
-                            opacity=1,
+                            opacity=1
+                        )
 
-                            annotation_text=f"<b>{name}<br>{val:.1f}</b>",
-                            annotation_position=pos,
+                        fig_dist.add_annotation(
+                            x=val,
+                            y=9.2,
 
-                            annotation_font=dict(
-                                size=18,
+                            text=f"<b>{name}<br>{val:.1f}</b>",
+
+                            showarrow=False,
+
+                            font=dict(
+                                size=20,
                                 color=color,
                                 family="Arial Black"
                             ),
 
-                            annotation_bgcolor="rgba(255,255,255,0.95)",
-                            annotation_bordercolor=color,
-                            annotation_borderwidth=2
+                            bgcolor="rgba(0,0,0,0)",
+
+                            xanchor="center",
+                            yanchor="bottom"
                         )
 
                 add_dist_vline(
                     v_lsl_tgt,
                     "Cust LSL",
                     "#2E7D32",
-                    "solid",
-                    "top left"
+                    "solid"
                 )
 
                 add_dist_vline(
                     v_usl_tgt,
                     "Cust USL",
                     "#2E7D32",
-                    "solid",
-                    "top right"
+                    "solid"
                 )
 
                 add_dist_vline(
                     v_lsl_std,
                     "Int LSL",
                     "#D32F2F",
-                    "dash",
-                    "top right"
+                    "dash"
                 )
 
                 add_dist_vline(
                     v_usl_std,
                     "Int USL",
                     "#D32F2F",
-                    "dash",
-                    "top left"
+                    "dash"
                 )
 
                 fig_dist.update_layout(
                     template="simple_white",
+
                     height=650,
+
                     xaxis_range=x_range,
+
                     showlegend=False,
 
                     font=dict(
@@ -324,11 +454,9 @@ if uploaded_file:
                         color="black"
                     ),
 
-                    title_font=dict(size=24),
-
                     margin=dict(
-                        t=100,
-                        r=120,
+                        t=80,
+                        r=80,
                         l=80,
                         b=80
                     )
@@ -339,8 +467,7 @@ if uploaded_file:
                     linewidth=3,
                     linecolor='black',
                     mirror='all',
-                    tickfont=dict(size=18),
-                    title_font=dict(size=20)
+                    tickfont=dict(size=18)
                 )
 
                 fig_dist.update_yaxes(
@@ -348,8 +475,7 @@ if uploaded_file:
                     linewidth=3,
                     linecolor='black',
                     mirror='all',
-                    tickfont=dict(size=18),
-                    title_font=dict(size=20)
+                    tickfont=dict(size=18)
                 )
 
                 st.plotly_chart(
@@ -358,9 +484,9 @@ if uploaded_file:
                     config=export_config
                 )
 
-                # ==================================================
+                # ==================================
                 # TREND ANALYSIS
-                # ==================================================
+                # ==================================
                 st.subheader("II. Trend Analysis")
 
                 fig_trend = go.Figure()
@@ -376,7 +502,16 @@ if uploaded_file:
                         line_width=0
                     )
 
-                def add_trend_hline(val, name, color, dash, pos):
+                # ==================================
+                # TREND LIMITS
+                # ==================================
+                def add_trend_hline(
+                    val,
+                    name,
+                    color,
+                    dash,
+                    pos
+                ):
 
                     if val is not None:
 
@@ -387,6 +522,7 @@ if uploaded_file:
                             line_width=5,
 
                             annotation_text=f"<b>{name}: {val:.1f}</b>",
+
                             annotation_position=pos,
 
                             annotation_font=dict(
@@ -395,9 +531,7 @@ if uploaded_file:
                                 family="Arial Black"
                             ),
 
-                            annotation_bgcolor="rgba(255,255,255,0.95)",
-                            annotation_bordercolor=color,
-                            annotation_borderwidth=2
+                            annotation_bgcolor="rgba(255,255,255,0)"
                         )
 
                 add_trend_hline(v_usl_tgt, "Cust USL", "#2E7D32", "solid", "top right")
@@ -408,6 +542,7 @@ if uploaded_file:
                 add_trend_hline(lcl, "LCL", "#E67E22", "dot", "bottom left")
                 add_trend_hline(mu, "Mean", "#8E44AD", "dashdot", "top left")
 
+                # TREND LINE
                 fig_trend.add_trace(
                     go.Scatter(
                         x=plot_data.index,
@@ -430,6 +565,7 @@ if uploaded_file:
                     )
                 )
 
+                # OOC
                 usl_limit = (
                     v_usl_std
                     if v_usl_std is not None
@@ -477,7 +613,9 @@ if uploaded_file:
 
                 fig_trend.update_layout(
                     template="simple_white",
+
                     height=750,
+
                     showlegend=False,
 
                     font=dict(
@@ -488,7 +626,7 @@ if uploaded_file:
 
                     margin=dict(
                         t=80,
-                        r=120,
+                        r=80,
                         l=80,
                         b=80
                     )
@@ -499,8 +637,7 @@ if uploaded_file:
                     linewidth=3,
                     linecolor='black',
                     mirror='all',
-                    tickfont=dict(size=18),
-                    title_font=dict(size=20)
+                    tickfont=dict(size=18)
                 )
 
                 fig_trend.update_yaxes(
@@ -508,8 +645,7 @@ if uploaded_file:
                     linewidth=3,
                     linecolor='black',
                     mirror='all',
-                    tickfont=dict(size=18),
-                    title_font=dict(size=20)
+                    tickfont=dict(size=18)
                 )
 
                 st.plotly_chart(
@@ -518,16 +654,19 @@ if uploaded_file:
                     config=export_config
                 )
 
-            # ======================================================
-            # SPC CONTROL CHARTS (I-MR)
-            # ======================================================
+            # ==================================
+            # SPC CONTROL CHARTS
+            # ==================================
             else:
 
-                st.subheader("III. Statistical Process Control (I-MR)")
+                st.subheader(
+                    "III. Statistical Process Control (I-MR)"
+                )
 
                 mr = plot_data.diff().abs()
 
                 mr_mean = mr.mean()
+
                 mr_ucl = mr.mean() * 3.267
 
                 fig_imr = make_subplots(
@@ -573,7 +712,15 @@ if uploaded_file:
                     col=1
                 )
 
-                def add_imr_hline(val, label, color, row):
+                # ==================================
+                # IMR LIMITS
+                # ==================================
+                def add_imr_hline(
+                    val,
+                    label,
+                    color,
+                    row
+                ):
 
                     if val is not None:
 
@@ -584,6 +731,7 @@ if uploaded_file:
                             line_width=5,
 
                             annotation_text=f"<b>{label}: {val:.1f}</b>",
+
                             annotation_position="top right",
 
                             annotation_font=dict(
@@ -592,9 +740,7 @@ if uploaded_file:
                                 family="Arial Black"
                             ),
 
-                            annotation_bgcolor="rgba(255,255,255,0.95)",
-                            annotation_bordercolor=color,
-                            annotation_borderwidth=2,
+                            annotation_bgcolor="rgba(255,255,255,0)",
 
                             row=row,
                             col=1
@@ -609,7 +755,9 @@ if uploaded_file:
 
                 fig_imr.update_layout(
                     height=900,
+
                     template="simple_white",
+
                     showlegend=False,
 
                     font=dict(
@@ -620,7 +768,7 @@ if uploaded_file:
 
                     margin=dict(
                         l=80,
-                        r=120,
+                        r=80,
                         t=80,
                         b=80
                     )
@@ -631,8 +779,7 @@ if uploaded_file:
                     linewidth=3,
                     linecolor='black',
                     mirror='all',
-                    tickfont=dict(size=18),
-                    title_font=dict(size=20)
+                    tickfont=dict(size=18)
                 )
 
                 fig_imr.update_yaxes(
@@ -640,8 +787,7 @@ if uploaded_file:
                     linewidth=3,
                     linecolor='black',
                     mirror='all',
-                    tickfont=dict(size=18),
-                    title_font=dict(size=20)
+                    tickfont=dict(size=18)
                 )
 
                 st.plotly_chart(
@@ -651,7 +797,9 @@ if uploaded_file:
                 )
 
     except Exception as e:
+
         st.error(f"Error: {e}")
 
 else:
+
     st.info("👈 Please upload data to begin.")
