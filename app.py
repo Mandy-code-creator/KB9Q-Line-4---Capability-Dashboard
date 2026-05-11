@@ -91,6 +91,8 @@ if uploaded_file:
             plot_data = pd.to_numeric(df[data_col], errors='coerce').dropna().reset_index(drop=True)
             n, mu = len(plot_data), plot_data.mean()
             sigma_fixed = plot_data.std(ddof=1)
+            data_max = plot_data.max()
+            data_min = plot_data.min()
 
             st.title(f"📊 Quality Analytics: {selected_label}")
 
@@ -155,18 +157,16 @@ if uploaded_file:
                     apply_full_border(ax_d); plt.tight_layout(); st.pyplot(fig_d)
 
             # ==========================================
-            # VIEW 2: SPC & OPTIMIZATION (TÁCH BIỆT K & SIGMA)
+            # VIEW 2: SPC & OPTIMIZATION
             # ==========================================
             else:
                 st.subheader("II. Control Limit Optimization & I-MR")
                 
-                st.markdown("##### ⚙️ Optimization Parameters")
+                st.markdown("##### ⚙️ Parameters")
                 c_i1, c_i2 = st.columns(2)
                 with c_i1:
-                    # Hệ số nhân dành riêng cho StdDev
                     k_std = st.number_input("Target Multiplier for StdDev (Sigma):", 1.0, 6.0, 3.0, 0.1)
                 with c_i2:
-                    # Hệ số nhân dành riêng cho IQR
                     k_iqr = st.number_input("Target Multiplier for IQR (k-factor):", 1.0, 6.0, 3.0, 0.1)
                 
                 q1, q3 = plot_data.quantile(0.25), plot_data.quantile(0.75)
@@ -178,17 +178,17 @@ if uploaded_file:
                 with col_res1:
                     st.write("**Method: Standard Deviation**")
                     st.table(pd.DataFrame({
-                        "Metric": ["Mean", "Sigma (σ)", "LSL", "USL"],
-                        "Value": [format_num(mu), format_num(sigma_fixed), format_num(mu - k_std*sigma_fixed), format_num(mu + k_std*sigma_fixed)],
-                        "Formula": ["Sum/N", "StdDev", f"Mean-({k_std}*σ)", f"Mean+({k_std}*σ)"]
+                        "Metric": ["N (Sample Size)", "Max", "Min", "Mean", "Sigma (σ)", "LSL", "USL"],
+                        "Value": [str(n), format_num(data_max), format_num(data_min), format_num(mu), format_num(sigma_fixed), format_num(mu - k_std*sigma_fixed), format_num(mu + k_std*sigma_fixed)],
+                        "Formula": ["Count", "Maximum", "Minimum", "Sum/N", "StdDev", f"Mean-({k_std}*σ)", f"Mean+({k_std}*σ)"]
                     }))
                     
                 with col_res2:
                     st.write("**Method: IQR (Robust)**")
                     st.table(pd.DataFrame({
-                        "Metric": ["Mean", "Sigma_iqr", "LSL", "USL"],
-                        "Value": [format_num(mu), format_num(s_iqr), format_num(mu - k_iqr*s_iqr), format_num(mu + k_iqr*s_iqr)],
-                        "Formula": ["Sum/N", "IQR/1.349", f"Mean-({k_iqr}*σ_i)", f"Mean+({k_iqr}*σ_i)"]
+                        "Metric": ["N (Sample Size)", "Max", "Min", "Mean", "Sigma_iqr", "LSL", "USL"],
+                        "Value": [str(n), format_num(data_max), format_num(data_min), format_num(mu), format_num(s_iqr), format_num(mu - k_iqr*s_iqr), format_num(mu + k_iqr*s_iqr)],
+                        "Formula": ["Count", "Maximum", "Minimum", "Sum/N", "IQR/1.349", f"Mean-({k_iqr}*σ_i)", f"Mean+({k_iqr}*σ_i)"]
                     }))
 
                 st.markdown("---")
@@ -196,14 +196,14 @@ if uploaded_file:
                 ax_i.plot(plot_data, marker="o", color="#1f77b4", label="Actual Data", alpha=0.7)
                 ax_i.axhline(mu, color="blue", ls="-", lw=2, label=f"Mean: {mu:.1f}")
                 
+                if cust_lsl: ax_i.axhline(cust_lsl, color="green", ls="-", lw=2.5, label=f"Cust LSL: {cust_lsl:.1f}")
+                if cust_usl: ax_i.axhline(cust_usl, color="green", ls="-", lw=2.5, label=f"Cust USL: {cust_usl:.1f}")
+                
                 if int_lsl: ax_i.axhline(int_lsl, color="red", ls="--", label="Current Int LSL")
                 if int_usl: ax_i.axhline(int_usl, color="red", ls="--", label="Current Int USL")
                 
-                # Vẽ giới hạn đề xuất của StdDev (Đỏ sẫm)
                 ax_i.axhline(mu + k_std*sigma_fixed, color="darkred", ls="-", lw=2, label=f"Proposed USL (StdDev {k_std}σ)")
                 ax_i.axhline(mu - k_std*sigma_fixed, color="darkred", ls="-", lw=2, label=f"Proposed LSL (StdDev {k_std}σ)")
-                
-                # Vẽ giới hạn đề xuất của IQR (Cam)
                 ax_i.axhline(mu + k_iqr*s_iqr, color="darkorange", ls="--", lw=2, label=f"Proposed USL (IQR {k_iqr}σ)")
                 ax_i.axhline(mu - k_iqr*s_iqr, color="darkorange", ls="--", lw=2, label=f"Proposed LSL (IQR {k_iqr}σ)")
                 
