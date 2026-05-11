@@ -116,27 +116,35 @@ def apply_clean_axes_subplot(fig, n_rows=2):
 # Label được đặt ở lề phải ngoài vùng vẽ (xref=paper)
 # ==========================================
 def add_hline_labeled(fig, y_val, label, color, dash, row=None):
-    """Vẽ đường ngang + label ngoài lề phải, không che dữ liệu."""
+    """Vẽ đường ngang + label ngoài lề phải, không che dữ liệu.
+    Dùng add_annotation riêng để tránh lỗi xref trên Plotly >= 5.18.
+    """
     if y_val is None:
         return
-    kwargs = dict(
-        line_dash=dash,
-        line_color=color,
-        line_width=2,
-        opacity=1,
-        annotation_text=f"<b>{label}: {y_val:.1f}</b>",
-        annotation_position="right",
-        annotation_font=dict(size=10, color=color),
-        annotation_bgcolor="rgba(255,255,255,0.0)",
-        annotation_bordercolor="rgba(0,0,0,0)",
-        annotation_xanchor="left",
-        annotation_xref="paper",
-        annotation_x=1.01,
-    )
+
+    # Vẽ đường không kèm annotation (tránh lỗi annotation_xref=paper)
+    hline_kwargs = dict(line_dash=dash, line_color=color, line_width=2, opacity=1)
     if row is not None:
-        kwargs["row"] = row
-        kwargs["col"] = 1
-    fig.add_hline(y=y_val, **kwargs)
+        hline_kwargs["row"] = row
+        hline_kwargs["col"] = 1
+    fig.add_hline(y=y_val, **hline_kwargs)
+
+    # Xác định yref phù hợp với subplot row
+    if row is None or row == 1:
+        yref = "y"
+    else:
+        yref = f"y{row}"
+
+    # Annotation riêng biệt đặt ngoài lề phải
+    fig.add_annotation(
+        x=1.01, y=y_val,
+        xref="paper", yref=yref,
+        text=f"<b>{label}: {y_val:.1f}</b>",
+        showarrow=False,
+        xanchor="left", yanchor="middle",
+        font=dict(size=10, color=color),
+        bgcolor="rgba(255,255,255,0)",
+    )
 
 
 def add_vline_labeled(fig, x_val, label, color, dash, position="top"):
