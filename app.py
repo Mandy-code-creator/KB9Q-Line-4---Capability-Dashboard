@@ -51,7 +51,7 @@ def apply_full_border(ax):
 
 def format_num(val):
     if val is None or pd.isna(val): return "-"
-    rounded = round(float(val), 2) # Tăng độ chính xác lên 2 chữ số cho chỉ số SPC
+    rounded = round(float(val), 2)
     return str(int(rounded)) if rounded == int(rounded) else str(rounded)
 
 # ==========================================
@@ -208,17 +208,14 @@ if uploaded_file:
                     cp, ca, cpk, status = "-", "-", "-", "N/A"
                     
                     if sig_v > 0 and i_usl is not None and i_lsl is not None:
-                        # 1. Tính Cp
                         cp_val = (i_usl - i_lsl) / (6 * sig_v)
                         cp = format_num(cp_val)
                         
-                        # 2. Tính Ca (Độ lệch tâm)
                         center_spec = (i_usl + i_lsl) / 2
                         half_range = (i_usl - i_lsl) / 2
                         ca_val = (mu_v - center_spec) / half_range
                         ca = f"{ca_val*100:.1f}%"
                         
-                        # 3. Tính Cpk
                         cpu = (i_usl - mu_v) / (3 * sig_v)
                         cpl = (mu_v - i_lsl) / (3 * sig_v)
                         cpk_val = min(cpu, cpl)
@@ -230,6 +227,9 @@ if uploaded_file:
                         "Parameter": label,
                         "N": len(p_data),
                         "Mean": format_num(mu_v),
+                        "StdDev (σ)": format_num(sig_v),
+                        "Int LSL": format_num(i_lsl), # ĐÃ BỔ SUNG
+                        "Int USL": format_num(i_usl), # ĐÃ BỔ SUNG
                         "Cp": cp,
                         "Ca": ca,
                         "Cpk": cpk,
