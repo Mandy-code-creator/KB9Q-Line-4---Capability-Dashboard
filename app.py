@@ -114,7 +114,8 @@ if uploaded_file:
                     
                     ax_t.set_xlabel("Coil Sequence", weight="bold")
                     ax_t.set_ylabel(f"{selected_label} Value", weight="bold")
-                    ax_t.set_title(f"{selected_label} Trend Analysis", pad=20)
+                    # Added Sample Size (N) to Title
+                    ax_t.set_title(f"{selected_label} Trend Analysis (N={n})", pad=20)
                     ax_t.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), ncol=4, fontsize=9)
                     apply_full_border(ax_t); plt.tight_layout(); st.pyplot(fig_t)
 
@@ -122,9 +123,8 @@ if uploaded_file:
                     fig_d, ax_d = plt.subplots(figsize=(12, 6))
                     counts, bins, patches = ax_d.hist(plot_data, bins=20, density=False, alpha=0.4, color="#7FB3D5", edgecolor="black")
                     
-                    # FIX: Force Y-axis to show only Integers (Coil Counts)
+                    # Force Y-axis to Integers
                     ax_d.yaxis.set_major_locator(MaxNLocator(integer=True))
-                    
                     ax_d.set_xlabel(f"{selected_label} Value", weight="bold")
                     ax_d.set_ylabel("Coil Count", weight="bold")
                     
@@ -137,7 +137,7 @@ if uploaded_file:
                         if val is not None:
                             ax.axvline(val, color=color, linestyle=ls, linewidth=3, label=label)
                             y_max = ax.get_ylim()[1]
-                            y_pos = y_max * (1 + (level * 0.08)) # Added extra clearance
+                            y_pos = y_max * (1 + (level * 0.08)) 
                             ax.text(val, y_pos, f"{val:.1f}", color=color, ha='center', va='bottom', fontweight='bold')
 
                     add_vline_std(ax_d, mu, "blue", "-", "Mean", 0)
@@ -148,7 +148,8 @@ if uploaded_file:
                     add_vline_std(ax_d, ucl_v1, "#ff7f0e", ":", "3σ UCL", 3)
                     add_vline_std(ax_d, lcl_v1, "#ff7f0e", ":", "3σ LCL", 3)
                     
-                    ax_d.set_title(f"{selected_label} Distribution & Capability", pad=90)
+                    # Added Sample Size (N) to Title
+                    ax_d.set_title(f"{selected_label} Distribution (N={n})", pad=90)
                     ax_d.legend(loc="upper left", bbox_to_anchor=(1, 1))
                     apply_full_border(ax_d); plt.tight_layout(); st.pyplot(fig_d)
 
@@ -157,12 +158,12 @@ if uploaded_file:
             # ==========================================
             else:
                 st.subheader("II. Control Limit Optimization & I-MR")
-                st.markdown("##### ⚙️ Optimization Parameters")
+                st.markdown("##### ⚙️ Parameters")
                 c_i1, c_i2 = st.columns(2)
                 with c_i1:
                     k_val = st.number_input("Target k-factor:", 1.0, 6.0, 3.0, 0.1)
                 with c_i2:
-                    m_sigma = st.number_input("Target Sigma (σ) (0=auto):", 0.0, 100.0, 0.0, 0.1)
+                    m_sigma = st.number_input("Target Sigma (0=auto):", 0.0, 100.0, 0.0, 0.1)
                 
                 s_used = sigma_fixed if m_sigma == 0 else m_sigma
                 q1, q3 = plot_data.quantile(0.25), plot_data.quantile(0.75)
@@ -197,7 +198,8 @@ if uploaded_file:
                 
                 ax_i.set_xlabel("Coil Sequence", weight="bold")
                 ax_i.set_ylabel(f"{selected_label} Value", weight="bold")
-                ax_i.set_title("I-Chart: Optimization Comparison", weight="bold")
+                # Added Sample Size (N) to Title
+                ax_i.set_title(f"I-Chart: Comparison (N={n})", weight="bold")
                 ax_i.legend(loc="upper left", bbox_to_anchor=(1, 1))
                 apply_full_border(ax_i); plt.tight_layout(); st.pyplot(fig_imr)
 
