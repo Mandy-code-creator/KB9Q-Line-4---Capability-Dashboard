@@ -104,7 +104,7 @@ if uploaded_file:
                 with tab_trend:
                     fig_t, ax_t = plt.subplots(figsize=(12, 6))
                     ax_t.plot(np.arange(1, n+1), plot_data, marker="o", markersize=6, color="#1f77b4", label="Actual Value")
-                    ax_t.axhline(mu, color="purple", ls="--", lw=2, label=f"Mean: {mu:.1f}")
+                    ax_t.axhline(mu, color="blue", ls="-", lw=2, label=f"Mean: {mu:.1f}")
                     if cust_lsl: ax_t.axhline(cust_lsl, color="green", ls="-", lw=3, label=f"Cust LSL: {cust_lsl:.1f}")
                     if cust_usl: ax_t.axhline(cust_usl, color="green", ls="-", lw=3, label=f"Cust USL: {cust_usl:.1f}")
                     if int_lsl: ax_t.axhline(int_lsl, color="red", ls="--", lw=3, label=f"Int LSL: {int_lsl:.1f}")
@@ -114,7 +114,6 @@ if uploaded_file:
                     
                     ax_t.set_xlabel("Coil Sequence", weight="bold")
                     ax_t.set_ylabel(f"{selected_label} Value", weight="bold")
-                    # Added Sample Size (N) to Title
                     ax_t.set_title(f"{selected_label} Trend Analysis (N={n})", pad=20)
                     ax_t.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), ncol=4, fontsize=9)
                     apply_full_border(ax_t); plt.tight_layout(); st.pyplot(fig_t)
@@ -123,7 +122,6 @@ if uploaded_file:
                     fig_d, ax_d = plt.subplots(figsize=(12, 6))
                     counts, bins, patches = ax_d.hist(plot_data, bins=20, density=False, alpha=0.4, color="#7FB3D5", edgecolor="black")
                     
-                    # Force Y-axis to Integers
                     ax_d.yaxis.set_major_locator(MaxNLocator(integer=True))
                     ax_d.set_xlabel(f"{selected_label} Value", weight="bold")
                     ax_d.set_ylabel("Coil Count", weight="bold")
@@ -133,23 +131,27 @@ if uploaded_file:
                     ax_pdf.plot(xs, norm.pdf(xs, mu, sigma_fixed), color="#1E3A8A", lw=3, label="Normal Fit")
                     ax_pdf.set_yticks([])
                     
-                    def add_vline_std(ax, val, color, ls, label, level=1):
+                    # BẢN FIX: Đặt nhãn số nằm sát trên viền một cách tương đối
+                    def add_vline_std(ax, val, color, ls, label, level=0):
                         if val is not None:
                             ax.axvline(val, color=color, linestyle=ls, linewidth=3, label=label)
-                            y_max = ax.get_ylim()[1]
-                            y_pos = y_max * (1 + (level * 0.08)) 
-                            ax.text(val, y_pos, f"{val:.1f}", color=color, ha='center', va='bottom', fontweight='bold')
+                            # Sử dụng transform để cố định khoảng cách theo khung hình thay vì giá trị data
+                            trans = ax.get_xaxis_transform()
+                            # Level 0 sát viền (1.02), mỗi level nhảy thêm 1 khoảng nhỏ (0.05)
+                            y_pos = 1.02 + (level * 0.05) 
+                            ax.text(val, y_pos, f"{val:.1f}", color=color, ha='center', va='bottom', transform=trans, fontweight='bold')
 
-                    add_vline_std(ax_d, mu, "blue", "-", "Mean", 0)
-                    add_vline_std(ax_d, cust_lsl, "green", "-", "Cust LSL", 1)
-                    add_vline_std(ax_d, cust_usl, "green", "-", "Cust USL", 1)
-                    add_vline_std(ax_d, int_lsl, "red", "--", "Int LSL", 2)
-                    add_vline_std(ax_d, int_usl, "red", "--", "Int USL", 2)
-                    add_vline_std(ax_d, ucl_v1, "#ff7f0e", ":", "3σ UCL", 3)
-                    add_vline_std(ax_d, lcl_v1, "#ff7f0e", ":", "3σ LCL", 3)
+                    # Sắp xếp lại level để số không bị đè và nằm gọn gàng
+                    add_vline_std(ax_d, mu, "blue", "-", "Mean", level=0)
+                    add_vline_std(ax_d, cust_lsl, "green", "-", "Cust LSL", level=0)
+                    add_vline_std(ax_d, cust_usl, "green", "-", "Cust USL", level=0)
+                    add_vline_std(ax_d, int_lsl, "red", "--", "Int LSL", level=1)
+                    add_vline_std(ax_d, int_usl, "red", "--", "Int USL", level=1)
+                    add_vline_std(ax_d, ucl_v1, "#ff7f0e", ":", "3σ UCL", level=2)
+                    add_vline_std(ax_d, lcl_v1, "#ff7f0e", ":", "3σ LCL", level=2)
                     
-                    # Added Sample Size (N) to Title
-                    ax_d.set_title(f"{selected_label} Distribution (N={n})", pad=90)
+                    # Giảm pad xuống vì các số giờ đã ôm sát biểu đồ hơn
+                    ax_d.set_title(f"{selected_label} Distribution (N={n})", pad=55)
                     ax_d.legend(loc="upper left", bbox_to_anchor=(1, 1))
                     apply_full_border(ax_d); plt.tight_layout(); st.pyplot(fig_d)
 
@@ -189,7 +191,7 @@ if uploaded_file:
                 st.markdown("---")
                 fig_imr, ax_i = plt.subplots(figsize=(12, 6))
                 ax_i.plot(plot_data, marker="o", color="#1f77b4", label="Actual Data", alpha=0.7)
-                ax_i.axhline(mu, color="purple", ls="--", lw=2, label=f"Mean: {mu:.1f}")
+                ax_i.axhline(mu, color="blue", ls="-", lw=2, label=f"Mean: {mu:.1f}")
                 
                 if int_lsl: ax_i.axhline(int_lsl, color="red", ls="--", label="Current Int LSL")
                 if int_usl: ax_i.axhline(int_usl, color="red", ls="--", label="Current Int USL")
@@ -198,7 +200,6 @@ if uploaded_file:
                 
                 ax_i.set_xlabel("Coil Sequence", weight="bold")
                 ax_i.set_ylabel(f"{selected_label} Value", weight="bold")
-                # Added Sample Size (N) to Title
                 ax_i.set_title(f"I-Chart: Comparison (N={n})", weight="bold")
                 ax_i.legend(loc="upper left", bbox_to_anchor=(1, 1))
                 apply_full_border(ax_i); plt.tight_layout(); st.pyplot(fig_imr)
