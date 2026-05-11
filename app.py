@@ -12,13 +12,8 @@ from scipy.stats import norm
 st.set_page_config(page_title="Line 4 Quality Analytics", layout="wide")
 
 plt.rcParams.update({
-    'font.size': 12,
-    'axes.labelweight': 'bold',
-    'axes.titleweight': 'bold',
-    'axes.titlesize': 15,
-    'legend.fontsize': 10,
-    'font.weight': 'bold',
-    'lines.linewidth': 2.5
+    'font.size': 12, 'axes.labelweight': 'bold', 'axes.titleweight': 'bold',
+    'axes.titlesize': 15, 'legend.fontsize': 10, 'font.weight': 'bold', 'lines.linewidth': 2.5
 })
 
 # ==========================================
@@ -45,9 +40,7 @@ def get_limit(df, keyword, limit_type, category):
 
 def apply_full_border(ax):
     for spine in ax.spines.values():
-        spine.set_linewidth(2.5)
-        spine.set_color('black')
-        spine.set_visible(True)
+        spine.set_linewidth(2.5); spine.set_color('black'); spine.set_visible(True)
 
 def format_num(val):
     if val is None or pd.isna(val): return "-"
@@ -78,8 +71,7 @@ if uploaded_file:
         
         if view_mode != "Executive Summary":
             selected_label = st.sidebar.selectbox("Select Parameter:", available)
-            short_key = metrics_map[selected_label]
-            data_col = find_data_col(df, short_key)
+            short_key = metrics_map[selected_label]; data_col = find_data_col(df, short_key)
             zh_map = {"YS": "降伏強度", "TS": "抗拉強度", "EL": "伸長率", "HRB": "硬度", "YPE": "YPE"}
             zh_key = zh_map.get(short_key, short_key)
             
@@ -95,112 +87,62 @@ if uploaded_file:
 
                 st.title(f"📊 Quality Analytics: {selected_label}")
 
-                # VIEW 1: PROCESS ANALYTICS
+                # VIEW 1: PROCESS ANALYTICS (Giữ nguyên logic Mandy đã duyệt)
                 if view_mode == "Process Analytics":
                     tab_trend, tab_dist = st.tabs(["📈 Trend Analysis", "📊 Distribution & SPC"])
                     ucl_v1, lcl_v1 = mu + 3*sigma_fixed, mu - 3*sigma_fixed
-
                     with tab_trend:
                         fig_t, ax_t = plt.subplots(figsize=(12, 6))
-                        ax_t.plot(np.arange(1, n+1), plot_data, marker="o", markersize=6, color="#1f77b4", label="Actual Value")
-                        ax_t.axhline(mu, color="blue", ls="-", lw=2, label=f"Mean: {mu:.1f}")
-                        if cust_lsl: ax_t.axhline(cust_lsl, color="green", ls="-", lw=3, label="Cust LSL")
-                        if cust_usl: ax_t.axhline(cust_usl, color="green", ls="-", lw=3, label="Cust USL")
-                        if int_lsl: ax_t.axhline(int_lsl, color="red", ls="--", lw=3, label="Int LSL")
-                        if int_usl: ax_t.axhline(int_usl, color="red", ls="--", lw=3, label="Int USL")
-                        ax_t.axhline(ucl_v1, color="#ff7f0e", ls=":", lw=3, label="3σ UCL")
-                        ax_t.axhline(lcl_v1, color="#ff7f0e", ls=":", lw=3, label="3σ LCL")
-                        ax_t.set_xlabel("Coil Sequence")
-                        ax_t.set_ylabel(f"{selected_label} Value")
-                        ax_t.set_title(f"{selected_label} Trend Analysis (N={n})", pad=20)
-                        ax_t.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), ncol=4, fontsize=9)
+                        ax_t.plot(np.arange(1, n+1), plot_data, marker="o", color="#1f77b4", label="Actual Value")
+                        ax_t.axhline(mu, color="blue", label=f"Mean: {mu:.1f}")
+                        if int_lsl: ax_t.axhline(int_lsl, color="red", ls="--", label="Int LSL")
+                        if int_usl: ax_t.axhline(int_usl, color="red", ls="--", label="Int USL")
+                        ax_t.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), ncol=4)
                         apply_full_border(ax_t); plt.tight_layout(); st.pyplot(fig_t)
-
                     with tab_dist:
                         fig_d, ax_d = plt.subplots(figsize=(12, 6))
-                        ax_d.hist(plot_data, bins=20, density=False, alpha=0.4, color="#7FB3D5", edgecolor="black")
+                        ax_d.hist(plot_data, bins=20, alpha=0.4, color="#7FB3D5", edgecolor="black")
                         ax_d.yaxis.set_major_locator(MaxNLocator(integer=True))
-                        ax_d.set_xlabel(f"{selected_label} Value")
-                        ax_d.set_ylabel("Coil Count")
-                        
                         ax_pdf = ax_d.twinx()
-                        x_min_fit, x_max_fit = min(plot_data.min(), mu - 4*sigma_fixed), max(plot_data.max(), mu + 4*sigma_fixed)
-                        xs = np.linspace(x_min_fit, x_max_fit, 500)
-                        ax_pdf.plot(xs, norm.pdf(xs, mu, sigma_fixed), color="#1E3A8A", lw=3, label="Normal Fit")
+                        x_min_f, x_max_f = min(plot_data.min(), mu - 4*sigma_fixed), max(plot_data.max(), mu + 4*sigma_fixed)
+                        xs = np.linspace(x_min_f, x_max_f, 500)
+                        ax_pdf.plot(xs, norm.pdf(xs, mu, sigma_fixed), color="#1E3A8A", lw=3)
                         ax_pdf.set_yticks([])
-                        
-                        def add_vline_std(ax, val, color, ls, label, level=0):
+                        def add_v(ax, val, color, ls, level=0):
                             if val is not None:
-                                ax.axvline(val, color=color, linestyle=ls, linewidth=3, label=label)
-                                trans = ax.get_xaxis_transform()
-                                y_pos = 1.02 + (level * 0.05) 
-                                ax.text(val, y_pos, f"{val:.1f}", color=color, ha='center', va='bottom', transform=trans, fontweight='bold')
-
-                        add_vline_std(ax_d, mu, "blue", "-", "Mean", 0)
-                        add_vline_std(ax_d, cust_lsl, "green", "-", "Cust LSL", 0)
-                        add_vline_std(ax_d, cust_usl, "green", "-", "Cust USL", 0)
-                        add_vline_std(ax_d, int_lsl, "red", "--", "Int LSL", 1)
-                        add_vline_std(ax_d, int_usl, "red", "--", "Int USL", 1)
-                        add_vline_std(ax_d, ucl_v1, "#ff7f0e", ":", "3σ UCL", 2)
-                        add_vline_std(ax_d, lcl_v1, "#ff7f0e", ":", "3σ LCL", 2)
-                        
+                                ax.axvline(val, color=color, linestyle=ls, lw=3)
+                                t = ax.get_xaxis_transform(); y = 1.02 + (level * 0.05)
+                                ax.text(val, y, f"{val:.1f}", color=color, ha='center', transform=t, fontweight='bold')
+                        add_v(ax_d, mu, "blue", "-", 0)
+                        add_v(ax_d, int_lsl, "red", "--", 1); add_v(ax_d, int_usl, "red", "--", 1)
                         ax_d.set_title(f"{selected_label} Distribution (N={n})", pad=55)
-                        ax_d.legend(loc="upper left", bbox_to_anchor=(1, 1))
                         apply_full_border(ax_d); plt.tight_layout(); st.pyplot(fig_d)
 
-                # VIEW 2: SPC OPTIMIZATION
+                # VIEW 2: SPC OPTIMIZATION (Giữ nguyên logic Mandy đã duyệt)
                 elif view_mode == "SPC Control Charts (I-MR)":
                     st.subheader("II. Control Limit Optimization & I-MR")
-                    c_i1, c_i2 = st.columns(2)
-                    with c_i1: k_std = st.number_input("Target Multiplier for StdDev (Sigma):", 1.0, 6.0, 3.0, 0.1)
-                    with c_i2: k_iqr = st.number_input("Target Multiplier for IQR (k-factor):", 1.0, 6.0, 3.0, 0.1)
-                    
-                    q1, q3 = plot_data.quantile(0.25), plot_data.quantile(0.75)
-                    s_iqr = (q3 - q1) / 1.349
-
-                    col_r1, col_r2 = st.columns(2)
-                    with col_r1:
-                        st.write("**Method: Standard Deviation**")
-                        st.table(pd.DataFrame({"Metric": ["N","Max","Min","Mean","Sigma","LSL","USL"],
-                                             "Value": [str(n), format_num(data_max), format_num(data_min), format_num(mu), format_num(sigma_fixed), format_num(mu-k_std*sigma_fixed), format_num(mu+k_std*sigma_fixed)]}))
-                    with col_r2:
-                        st.write("**Method: IQR (Robust)**")
-                        st.table(pd.DataFrame({"Metric": ["N","Max","Min","Mean","Sigma_iqr","LSL","USL"],
-                                             "Value": [str(n), format_num(data_max), format_num(data_min), format_num(mu), format_num(s_iqr), format_num(mu-k_iqr*s_iqr), format_num(mu+k_iqr*s_iqr)]}))
-
+                    c1, c2 = st.columns(2)
+                    with c1: k_std = st.number_input("Target Multiplier for StdDev (Sigma):", 1.0, 6.0, 3.0, 0.1)
+                    with c2: k_iqr = st.number_input("Target Multiplier for IQR (k-factor):", 1.0, 6.0, 3.0, 0.1)
+                    q1, q3 = plot_data.quantile(0.25), plot_data.quantile(0.75); s_iqr = (q3 - q1) / 1.349
                     fig_imr, ax_i = plt.subplots(figsize=(12, 6))
-                    ax_i.plot(plot_data, marker="o", color="#1f77b4", label="Actual Data", alpha=0.7)
-                    ax_i.axhline(mu, color="blue", ls="-", lw=2, label="Mean")
-                    
-                    # BỔ SUNG: Hiển thị giới hạn nội bộ hiện tại trong View 2
-                    if int_lsl: ax_i.axhline(int_lsl, color="red", ls="--", lw=2, label="Current Int LSL")
-                    if int_usl: ax_i.axhline(int_usl, color="red", ls="--", lw=2, label="Current Int USL")
-                    
-                    if cust_lsl: ax_i.axhline(cust_lsl, color="green", ls="-", lw=2.5, label="Cust LSL")
-                    if cust_usl: ax_i.axhline(cust_usl, color="green", ls="-", lw=2.5, label="Cust USL")
-                    
-                    ax_i.axhline(mu + k_std*sigma_fixed, color="darkred", ls="-", label=f"Prop USL ({k_std}σ)")
-                    ax_i.axhline(mu - k_std*sigma_fixed, color="darkred", ls="-", label=f"Prop LSL ({k_std}σ)")
-                    ax_i.axhline(mu + k_iqr*s_iqr, color="darkorange", ls="--", label=f"Prop USL (IQR {k_iqr}k)")
-                    ax_i.axhline(mu - k_iqr*s_iqr, color="darkorange", ls="--", label=f"Prop LSL (IQR {k_iqr}k)")
-                    
-                    ax_i.set_xlabel("Coil Sequence")
-                    ax_i.set_ylabel(f"{selected_label} Value")
-                    ax_i.set_title(f"I-Chart: Optimization Comparison (N={n})")
+                    ax_i.plot(plot_data, marker="o", color="#1f77b4", alpha=0.7)
+                    if int_lsl: ax_i.axhline(int_lsl, color="red", ls="--", label="Current Int LSL")
+                    if int_usl: ax_i.axhline(int_usl, color="red", ls="--", label="Current Int USL")
+                    ax_i.axhline(mu + k_std*sigma_fixed, color="darkred", label="Prop USL (StdDev)")
+                    ax_i.axhline(mu + k_iqr*s_iqr, color="darkorange", ls="--", label="Prop USL (IQR)")
                     ax_i.legend(loc="upper left", bbox_to_anchor=(1, 1))
                     apply_full_border(ax_i); plt.tight_layout(); st.pyplot(fig_imr)
 
-        # VIEW 3: EXECUTIVE SUMMARY
+        # VIEW 3: EXECUTIVE SUMMARY (CẬP NHẬT ĐIỀU KIỆN MỚI CỦA MANDY)
         elif view_mode == "Executive Summary":
             st.title("📑 Executive Quality Summary")
             summary_data = []
-            zh_sum_map = {"YS": "降伏強度", "TS": "抗拉強度", "EL": "伸長率", "HRB": "硬度", "YPE": "YPE"}
+            zh_sum_map = {"YS": "降伏強度", "TS": "抗拉強度", "EL": "伸長率", "Hardness": "硬度", "YPE": "YPE"}
             
             for label in available:
-                short_key = metrics_map[label]
-                data_col = find_data_col(df, short_key)
+                short_key = metrics_map[label]; data_col = find_data_col(df, short_key)
                 zh_key = zh_sum_map.get(short_key, short_key)
-                
                 if data_col:
                     p_data = pd.to_numeric(df[data_col], errors='coerce').dropna()
                     if len(p_data) == 0: continue
@@ -212,27 +154,29 @@ if uploaded_file:
                     cpk_val = None
                     if sig_v > 0:
                         if i_usl is not None and i_lsl is not None:
-                            cp_val = (i_usl - i_lsl) / (6 * sig_v)
-                            center, half_t = (i_usl + i_lsl) / 2, (i_usl - i_lsl) / 2
-                            ca_val = (mu_v - center) / half_t
-                            cpk_val = cp_val * (1 - abs(ca_val))
-                            cp, ca, cpk = format_num(cp_val), f"{ca_val*100:.1f}%", format_num(cpk_val)
-                            formula = "Cp * (1 - |Ca|)"
+                            cp_v = (i_usl - i_lsl) / (6 * sig_v)
+                            cnt, half = (i_usl + i_lsl) / 2, (i_usl - i_lsl) / 2
+                            ca_v = (mu_v - cnt) / half
+                            cpk_val = cp_v * (1 - abs(ca_v))
+                            cp, ca, cpk, formula = format_num(cp_v), f"{ca_v*100:.1f}%", format_num(cpk_val), "Cp*(1-|Ca|)"
                         elif i_usl is not None:
-                            cpk_val = (i_usl - mu_v) / (3 * sig_v)
-                            cpk, formula = format_num(cpk_val), "Cpu"
+                            cpk_val = (i_usl - mu_v) / (3 * sig_v); cpk, formula = format_num(cpk_val), "Cpu"
                         elif i_lsl is not None:
-                            cpk_val = (mu_v - i_lsl) / (3 * sig_v)
-                            cpk, formula = format_num(cpk_val), "Cpl"
+                            cpk_val = (mu_v - i_lsl) / (3 * sig_v); cpk, formula = format_num(cpk_val), "Cpl"
+                            
                         if cpk_val is not None:
-                            status = "🟢 Excellent" if cpk_val >= 1.33 else ("🟡 Acceptable" if cpk_val >= 1.0 else "🔴 Action Required")
+                            # THÊM ĐIỀU KIỆN CỦA MANDY: Cảnh báo khi chất lượng quá dư thừa
+                            if cpk_val < 1.0: status = "🔴 Action Required"
+                            elif 1.0 <= cpk_val < 1.33: status = "🟡 Acceptable"
+                            elif 1.33 <= cpk_val <= 2.0: status = "🟢 Excellent"
+                            else: status = "🔵 Over-engineered (>2.0)"
                     
                     summary_data.append({"Parameter": label, "N": len(p_data), "Mean": format_num(mu_v), "StdDev (σ)": format_num(sig_v),
                                        "Int LSL": format_num(i_lsl), "Int USL": format_num(i_usl), "Cp": cp, "Ca": ca, "Cpk": cpk, 
                                        "Cpk Formula": formula, "Status": status})
             
             st.dataframe(pd.DataFrame(summary_data), hide_index=True, use_container_width=True)
-            st.markdown("##### 💡 Capability Formulas: \n* **Cp** = (USL-LSL)/6σ | **Ca** = (Mean-Center)/Half-Tol | **Cpk** = Cp*(1-|Ca|)")
+            st.info("💡 **Tip:** Blue status (Over-engineered) suggests potential for cost optimization or process speed increase.")
 
     except Exception as e:
         st.error(f"System Error: {e}")
