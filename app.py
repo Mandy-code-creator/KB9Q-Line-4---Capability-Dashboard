@@ -127,21 +127,23 @@ if uploaded_file:
                     ax_d.set_ylabel("Coil Count", weight="bold")
                     
                     ax_pdf = ax_d.twinx()
-                    xs = np.linspace(plot_data.min()*0.9, plot_data.max()*1.1, 500)
+                    
+                    # BẢN FIX: Kéo dài đuôi của đường Normal Curve (Tối thiểu ±4 Sigma)
+                    x_min_fit = min(plot_data.min(), mu - 4 * sigma_fixed)
+                    x_max_fit = max(plot_data.max(), mu + 4 * sigma_fixed)
+                    pad_x = (x_max_fit - x_min_fit) * 0.05
+                    xs = np.linspace(x_min_fit - pad_x, x_max_fit + pad_x, 500)
+                    
                     ax_pdf.plot(xs, norm.pdf(xs, mu, sigma_fixed), color="#1E3A8A", lw=3, label="Normal Fit")
                     ax_pdf.set_yticks([])
                     
-                    # BẢN FIX: Đặt nhãn số nằm sát trên viền một cách tương đối
                     def add_vline_std(ax, val, color, ls, label, level=0):
                         if val is not None:
                             ax.axvline(val, color=color, linestyle=ls, linewidth=3, label=label)
-                            # Sử dụng transform để cố định khoảng cách theo khung hình thay vì giá trị data
                             trans = ax.get_xaxis_transform()
-                            # Level 0 sát viền (1.02), mỗi level nhảy thêm 1 khoảng nhỏ (0.05)
                             y_pos = 1.02 + (level * 0.05) 
                             ax.text(val, y_pos, f"{val:.1f}", color=color, ha='center', va='bottom', transform=trans, fontweight='bold')
 
-                    # Sắp xếp lại level để số không bị đè và nằm gọn gàng
                     add_vline_std(ax_d, mu, "blue", "-", "Mean", level=0)
                     add_vline_std(ax_d, cust_lsl, "green", "-", "Cust LSL", level=0)
                     add_vline_std(ax_d, cust_usl, "green", "-", "Cust USL", level=0)
@@ -150,7 +152,6 @@ if uploaded_file:
                     add_vline_std(ax_d, ucl_v1, "#ff7f0e", ":", "3σ UCL", level=2)
                     add_vline_std(ax_d, lcl_v1, "#ff7f0e", ":", "3σ LCL", level=2)
                     
-                    # Giảm pad xuống vì các số giờ đã ôm sát biểu đồ hơn
                     ax_d.set_title(f"{selected_label} Distribution (N={n})", pad=55)
                     ax_d.legend(loc="upper left", bbox_to_anchor=(1, 1))
                     apply_full_border(ax_d); plt.tight_layout(); st.pyplot(fig_d)
