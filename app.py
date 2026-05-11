@@ -14,10 +14,7 @@ st.set_page_config(page_title="Line 4 Quality Analytics", layout="wide")
 
 st.markdown("""
     <style>
-    /* Clean industrial background */
     .main { background-color: #F4F6F9; }
-    
-    /* Card layout for charts */
     div.stPlotlyChart {
         background-color: #ffffff;
         padding: 20px;
@@ -26,8 +23,6 @@ st.markdown("""
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
         margin-bottom: 20px;
     }
-    
-    /* Metric Cards */
     div[data-testid="stMetric"] {
         background-color: #ffffff;
         border-top: 4px solid #1D4ED8;
@@ -35,8 +30,6 @@ st.markdown("""
         padding: 15px;
         box-shadow: 0 1px 3px rgba(0,0,0,0.1);
     }
-    
-    /* Professional Typography */
     h1, h2, h3 { 
         color: #1E3A8A !important; 
         font-family: 'Arial', sans-serif !important; 
@@ -49,21 +42,18 @@ st.markdown("""
 # 2. UTILITY FUNCTIONS
 # ==========================================
 def find_data_col(df, key):
-    """Find the actual measurement column, excluding spec limit columns"""
     for col in df.columns:
         if re.search(key, col, re.IGNORECASE) and not any(kw in col for kw in ["管制", "規格", "要求"]):
             return col
     return None
 
 def get_limit(df, keyword, limit_type, category):
-    """Extract standard and target limits safely"""
     col = next((c for c in df.columns if keyword in c and limit_type in c.lower() and category in c), None)
     if col:
         val = pd.to_numeric(df[col], errors='coerce').median()
         return float(val) if pd.notnull(val) and val > 0 else None
     return None
 
-# High-resolution export configuration for Word reports
 export_config = {
     'displayModeBar': True, 
     'displaylogo': False,
@@ -88,7 +78,6 @@ if uploaded_file:
         else:
             df = df_raw
 
-        # Parameter mapping
         metrics_map = {"YS": "YS", "TS": "TS", "EL": "EL", "Hardness": "HRB"}
         available = [k for k, v in metrics_map.items() if find_data_col(df, v)]
         
@@ -99,12 +88,10 @@ if uploaded_file:
         selected_label = st.sidebar.selectbox("Select Parameter:", available)
         view_mode = st.sidebar.radio("View Mode:", ["Process Analytics", "SPC Control Charts (I-MR)"])
         
-        # Identify columns
         short_key = metrics_map[selected_label]
         data_col = find_data_col(df, short_key)
         zh_key = "降伏強度" if "YS" in short_key else "抗拉強度" if "TS" in short_key else "伸長率" if "EL" in short_key else "硬度"
         
-        # Get Limits (Target = Customer, Std = Internal)
         v_lsl_std = get_limit(df, zh_key, "min", "管制")
         v_usl_std = get_limit(df, zh_key, "max", "管制")
         v_lsl_tgt = get_limit(df, zh_key, "min", "客戶要求")
@@ -115,13 +102,11 @@ if uploaded_file:
             n, mu, sigma = len(plot_data), plot_data.mean(), plot_data.std()
             ucl, lcl = mu + 3*sigma, mu - 3*sigma
 
-            # Resolve limits
             target_lsl = v_lsl_tgt if v_lsl_tgt else v_lsl_std
             target_usl = v_usl_tgt if v_usl_tgt else v_usl_std
             std_lsl = v_lsl_std if v_lsl_std else target_lsl
             std_usl = v_usl_std if v_usl_std else target_usl
             
-            # Capability Calculations
             cp, cpk = None, None
             if sigma > 0:
                 if target_lsl and target_usl:
@@ -132,7 +117,6 @@ if uploaded_file:
                 elif target_usl: 
                     cpk = (target_usl - mu)/(3*sigma)
 
-            # --- TOP KPI METRICS ---
             st.title(f"📊 Quality Analytics: {selected_label}")
             
             k1, k2, k3, k4 = st.columns(4)
@@ -153,39 +137,53 @@ if uploaded_file:
                 pts = [plot_data.min(), plot_data.max()]
                 pts.extend([v for v in [target_lsl, target_usl, std_lsl, std_usl, lcl, ucl] if v])
                 min_pt, max_pt = min(pts), max(pts)
-                padding = (max_pt - min_pt) * 0.1 if max_pt != min_pt else max_pt * 0.05
-                x_range = [min_pt - padding, max_pt + padding]
+                
+                span = max_pt - min_pt if max_pt != min_pt else max_pt * 0.1
+                
+                # TẠO KHÔNG GIAN AN TOÀN (25% bên trái) ĐỂ CHỨA HỘP SPC, KHÔNG CHE DỮ LIỆU
+                x_range = [min_pt - span * 0.25, max_pt + span * 0.1]
 
-                # Dynamic Y-axis to fit SPC box
                 counts, _ = np.histogram(plot_data, bins=k_bins)
                 max_y = counts.max() * 1.35 if len(counts) > 0 else 10
 
                 fig_dist = go.Figure()
                 
-                # Histogram
                 fig_dist.add_trace(go.Histogram(
                     x=plot_data, nbinsx=k_bins, name='LINE Hist',
                     marker_color='#7FB3D5', marker_line_color='white', marker_line_width=1, opacity=0.8
                 ))
                 
-                # Normal Curve
                 if sigma > 0:
                     bin_w = (plot_data.max() - plot_data.min()) / k_bins if n > 1 else 1
                     x_c = np.linspace(x_range[0], x_range[1], 400)
                     y_c = norm.pdf(x_c, mu, sigma) * n * bin_w
                     fig_dist.add_trace(go.Scatter(x=x_c, y=y_c, mode='lines', name='LINE Fit', line=dict(color='#004080', width=3)))
 
-                # Add limit lines
-                if target_lsl: fig_dist.add_vline(x=target_lsl, line_dash="dash", line_color="#FF0000", line_width=2)
-                if target_usl: fig_dist.add_vline(x=target_usl, line_dash="dash", line_color="#FF0000", line_width=2)
-                if std_lsl and std_lsl != target_lsl: fig_dist.add_vline(x=std_lsl, line_dash="dashdot", line_color="#800080", line_width=2)
-                if std_usl and std_usl != target_usl: fig_dist.add_vline(x=std_usl, line_dash="dashdot", line_color="#800080", line_width=2)
+                # THÊM ĐƯỜNG GIỚI HẠN VÀ GHI RÕ GIÁ TRỊ TẠI ĐÓ
+                limits_to_draw = [
+                    (target_lsl, "Target LSL", "#FF0000", "dash"),
+                    (target_usl, "Target USL", "#FF0000", "dash"),
+                    (std_lsl, "Std LSL", "#800080", "dashdot"),
+                    (std_usl, "Std USL", "#800080", "dashdot")
+                ]
+                
+                drawn_values = set()
+                for val, lbl, clr, sty in limits_to_draw:
+                    if val and val not in drawn_values:
+                        drawn_values.add(val)
+                        fig_dist.add_vline(x=val, line_dash=sty, line_color=clr, line_width=2)
+                        # Hiển thị giá trị dọc theo đường kẻ
+                        fig_dist.add_annotation(
+                            x=val, y=0.95, yref="paper", 
+                            text=f"<b>{lbl}: {val}</b>", 
+                            textangle=-90, font=dict(color=clr, size=11), 
+                            showarrow=False, xanchor="right", yanchor="top",
+                            bgcolor="rgba(255, 255, 255, 0.8)", borderpad=2
+                        )
 
-                # Dummy traces for legend
                 fig_dist.add_trace(go.Scatter(x=[None], y=[None], mode='lines', name='Target LSL/USL', line=dict(color='#FF0000', width=2, dash='dash')))
                 fig_dist.add_trace(go.Scatter(x=[None], y=[None], mode='lines', name='Std LSL/USL', line=dict(color='#800080', width=2, dash='dashdot')))
 
-                # SPC Indices Box
                 cp_str = f"{cp:.2f}" if cp else "N/A"
                 cpk_str = f"{cpk:.2f}" if cpk else "N/A"
                 rating = "Good" if cpk and cpk >= 1.33 else "Poor" if cpk else "N/A"
@@ -210,16 +208,14 @@ if uploaded_file:
 
                 st.plotly_chart(fig_dist, use_container_width=True, config=export_config)
 
-                # --- CHART 2: TREND BY SEQUENCE (BOTTOM LEGEND STYLE) ---
+                # --- CHART 2: TREND BY SEQUENCE ---
                 st.subheader(f"II. {selected_label} Trend by Coil Sequence")
                 fig_trend = go.Figure()
 
-                # 1. Target Zone (Green Background)
                 if target_lsl and target_usl:
                     fig_trend.add_hrect(y0=target_lsl, y1=target_usl, fillcolor="#E8F5E9", opacity=0.4, layer="below", line_width=0)
                     fig_trend.add_trace(go.Scatter(x=[None], y=[None], mode='markers', marker=dict(size=12, color='#E8F5E9', symbol='square', line=dict(color='black', width=1)), name='Target Zone'))
 
-                # 2. Add Horizontal Limits (with Legend Traces)
                 if target_usl:
                     fig_trend.add_hline(y=target_usl, line_dash="dash", line_color="#2E7D32", line_width=2)
                     fig_trend.add_trace(go.Scatter(x=[None], y=[None], mode='lines', line=dict(color='#2E7D32', width=2, dash='dash'), name=f'Target USL={target_usl}'))
@@ -236,12 +232,10 @@ if uploaded_file:
                     fig_trend.add_hline(y=std_lsl, line_dash="dash", line_color="#D32F2F", line_width=2)
                     fig_trend.add_trace(go.Scatter(x=[None], y=[None], mode='lines', line=dict(color='#D32F2F', width=2, dash='dash'), name=f'Std LSL={std_lsl}'))
 
-                # 3. Main Data (Blue Squares)
                 fig_trend.add_trace(go.Scatter(x=plot_data.index, y=plot_data, mode='lines+markers', 
                                               name='LINE', line=dict(color='#1F77B4', width=2),
                                               marker=dict(symbol='square', size=6, color='#1F77B4')))
 
-                # 4. Out of Control Markers (Big Red Dots)
                 ooc_idx, ooc_vals = [], []
                 for i, val in enumerate(plot_data):
                     is_ooc = False
@@ -255,16 +249,12 @@ if uploaded_file:
                     fig_trend.add_trace(go.Scatter(x=ooc_idx, y=ooc_vals, mode='markers', 
                                                   name='Out of Control', marker=dict(color='#FF0000', size=12, symbol='circle')))
 
-                # 5. Layout Configuration (Bottom Horizontal Legend)
                 fig_trend.update_layout(
                     title=dict(text=f"<b>{selected_label} Trend by Coil Sequence</b>", x=0.5, font=dict(size=16)),
                     template="simple_white", height=550,
                     xaxis_title="Sequence", yaxis_title="Measurement Value",
-                    legend=dict(
-                        orientation="h", x=0.5, xanchor="center", y=-0.2, yanchor="top",
-                        bgcolor="rgba(255,255,255,0)", borderwidth=0
-                    ),
-                    margin=dict(l=50, r=50, t=50, b=100) # Ensure bottom space for legend
+                    legend=dict(orientation="h", x=0.5, xanchor="center", y=-0.2, yanchor="top", bgcolor="rgba(255,255,255,0)", borderwidth=0),
+                    margin=dict(l=50, r=50, t=50, b=100) 
                 )
                 
                 fig_trend.update_xaxes(showline=True, linewidth=1, linecolor='black', mirror=True)
