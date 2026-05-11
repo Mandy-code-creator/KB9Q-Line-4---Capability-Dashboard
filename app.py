@@ -111,6 +111,9 @@ def get_limit(df, keyword, limit_type, category):
     return None
 
 
+# ==========================================
+# EXPORT CONFIG
+# ==========================================
 export_config = {
     'displayModeBar': True,
     'displaylogo': False,
@@ -124,7 +127,7 @@ export_config = {
 }
 
 # ==========================================
-# 3. SIDEBAR & DATA PROCESSING
+# SIDEBAR
 # ==========================================
 st.sidebar.header("📂 DATA SOURCE")
 
@@ -133,6 +136,9 @@ uploaded_file = st.sidebar.file_uploader(
     type=["xlsx", "csv", "xls"]
 )
 
+# ==========================================
+# MAIN
+# ==========================================
 if uploaded_file:
 
     try:
@@ -164,7 +170,7 @@ if uploaded_file:
             ]
 
         # ======================================
-        # PARAMETER MAP
+        # METRIC MAP
         # ======================================
         metrics_map = {
             "YS": "YS",
@@ -241,7 +247,7 @@ if uploaded_file:
         )
 
         # ======================================
-        # MAIN DATA
+        # DATA
         # ======================================
         if data_col:
 
@@ -330,6 +336,7 @@ if uploaded_file:
                 # ==================================
                 fig_dist = go.Figure()
 
+                # HISTOGRAM
                 fig_dist.add_trace(
                     go.Histogram(
                         x=plot_data,
@@ -372,17 +379,19 @@ if uploaded_file:
                     )
 
                 # ==================================
-                # LIMIT LINE FUNCTION
+                # LIMIT LINES
                 # ==================================
                 def add_dist_vline(
                     val,
                     name,
                     color,
-                    dash
+                    dash,
+                    text_side="left"
                 ):
 
                     if val is not None:
 
+                        # LINE
                         fig_dist.add_vline(
                             x=val,
                             line_dash=dash,
@@ -391,13 +400,25 @@ if uploaded_file:
                             opacity=1
                         )
 
+                        # TEXT POSITION
+                        x_shift = -12 if text_side == "left" else 12
+
+                        align = (
+                            "right"
+                            if text_side == "left"
+                            else "left"
+                        )
+
+                        # TEXT
                         fig_dist.add_annotation(
                             x=val,
-                            y=9.2,
+                            y=10,
 
                             text=f"<b>{name}<br>{val:.1f}</b>",
 
                             showarrow=False,
+
+                            xshift=x_shift,
 
                             font=dict(
                                 size=20,
@@ -405,40 +426,46 @@ if uploaded_file:
                                 family="Arial Black"
                             ),
 
-                            bgcolor="rgba(0,0,0,0)",
+                            align=align,
 
-                            xanchor="center",
-                            yanchor="bottom"
+                            bgcolor="rgba(0,0,0,0)"
                         )
 
                 add_dist_vline(
                     v_lsl_tgt,
                     "Cust LSL",
                     "#2E7D32",
-                    "solid"
+                    "solid",
+                    "left"
                 )
 
                 add_dist_vline(
                     v_usl_tgt,
                     "Cust USL",
                     "#2E7D32",
-                    "solid"
+                    "solid",
+                    "right"
                 )
 
                 add_dist_vline(
                     v_lsl_std,
                     "Int LSL",
                     "#D32F2F",
-                    "dash"
+                    "dash",
+                    "left"
                 )
 
                 add_dist_vline(
                     v_usl_std,
                     "Int USL",
                     "#D32F2F",
-                    "dash"
+                    "dash",
+                    "right"
                 )
 
+                # ==================================
+                # LAYOUT
+                # ==================================
                 fig_dist.update_layout(
                     template="simple_white",
 
