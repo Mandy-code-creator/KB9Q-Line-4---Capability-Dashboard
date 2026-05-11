@@ -11,14 +11,15 @@ from scipy.stats import norm
 # ==========================================
 st.set_page_config(page_title="Line 4 Quality Analytics", layout="wide")
 
-# Thiết lập font in đậm và to cho toàn bộ hệ thống biểu đồ
+# Thiết lập font in đậm và to toàn cục cho biểu đồ
 plt.rcParams.update({
     'font.size': 12,
     'axes.labelweight': 'bold',
     'axes.titleweight': 'bold',
     'axes.titlesize': 15,
     'legend.fontsize': 10,
-    'font.weight': 'bold'
+    'font.weight': 'bold',
+    'lines.linewidth': 2.5
 })
 
 # ==========================================
@@ -44,14 +45,14 @@ def get_limit(df, keyword, limit_type, category):
     return None
 
 def apply_full_border(ax):
-    """Đảm bảo khung viền đen kín 4 cạnh, in đậm"""
+    """Ép khung viền đen đậm kín 4 cạnh để không bị mất cạnh số 4"""
     for spine in ax.spines.values():
         spine.set_linewidth(2.5)
         spine.set_color('black')
         spine.set_visible(True)
 
 # ==========================================
-# 3. MAIN APP
+# 3. MAIN APP LOGIC
 # ==========================================
 st.sidebar.header("📂 DATA SOURCE")
 uploaded_file = st.sidebar.file_uploader("Upload Excel/CSV Report", type=["xlsx", "csv", "xls"])
@@ -61,14 +62,18 @@ if uploaded_file:
         df_raw = load_and_clean_data(uploaded_file)
         df = df_raw.copy()
         
+        # Lọc theo用途碼 (Usage Code)
         if "用途碼" in df_raw.columns:
             usage_list = sorted(df_raw["用途碼"].dropna().unique().tolist())
             selected_usages = st.sidebar.multiselect("Filter Usage Code:", options=usage_list, default=usage_list)
             df = df_raw[df_raw["用途碼"].isin(selected_usages)]
 
+        # Map các thông số kỹ thuật
         metrics_map = {"YS": "YS", "TS": "TS", "EL": "EL", "Hardness": "HRB", "YPE": "YPE"}
         available = [k for k, v in metrics_map.items() if find_data_col(df, v)]
-        if not available: st.stop()
+        if not available:
+            st.error("❌ Không tìm thấy cột dữ liệu phù hợp.")
+            st.stop()
 
         selected_label = st.sidebar.selectbox("Select Parameter:", available)
         view_mode = st.sidebar.radio("View Mode:", ["Process Analytics", "SPC Control Charts (I-MR)"])
@@ -78,11 +83,9 @@ if uploaded_file:
         zh_map = {"YS": "降伏強度", "TS": "抗拉強度", "EL": "伸長率", "HRB": "硬度", "YPE": "YPE"}
         zh_key = zh_map.get(short_key, short_key)
         
-        # 1. GIỚI HẠN KIỂM SOÁT NỘI BỘ (Dùng làm chuẩn đánh giá SPC)
+        # Lấy các tầng giới hạn
         int_lsl = get_limit(df, zh_key, "min", "管制")
         int_usl = get_limit(df, zh_key, "max", "管制")
-        
-        # 2. GIỚI HẠN KHÁCH HÀNG
         cust_lsl = get_limit(df, zh_key, "min", "客戶要求")
         cust_usl = get_limit(df, zh_key, "max", "客戶要求")
 
@@ -90,6 +93,8 @@ if uploaded_file:
             plot_data = pd.to_numeric(df[data_col], errors='coerce').dropna().reset_index(drop=True)
             n = len(plot_data)
             mu, sigma = plot_data.mean(), plot_data.std(ddof=1)
+            
+            # Giới hạn 3-Sigma thống kê
             ucl_3s, lcl_3s = mu + 3*sigma, mu - 3*sigma
 
             st.title(f"📊 Quality Analytics: {selected_label}")
@@ -99,29 +104,36 @@ if uploaded_file:
 
                 with tab_trend:
                     x_idx = np.arange(1, n + 1)
-                    fig, ax = plt.subplots(figsize=(12, 6))
-                    ax.plot(x_idx, plot_data, marker="o", markersize=6, linewidth=2, label="Actual Value", color="#1f77b4", zorder=1)
+                    fig_t, ax_t = plt.subplots(figsize=(12, 6))
                     
-                    # Highlight các điểm vượt giới hạn Nội bộ
+                    # 1. Vẽ đường dữ liệu chính
+                    ax_t.plot(x_idx, plot_data, marker="o", markersize=6, label="Actual Value", color="#1f77b4", zorder=1)
+                    
+                    # 2. Highlight điểm vượt giới hạn NỘI BỘ
                     out_mask = pd.Series([False] * n)
                     if int_usl: out_mask |= (plot_data > int_usl)
                     if int_lsl: out_mask |= (plot_data < int_lsl)
                     if out_mask.any():
-                        ax.scatter(x_idx[out_mask], plot_data[out_mask], color='red', s=120, label="Out of Internal Spec", edgecolor='black', linewidth=1.5, zorder=3)
+                        ax_t.scatter(x_idx[out_mask], plot_data[out_mask], color='red', s=120, 
+                                    label="Out of Internal Spec", edgecolor='black', linewidth=1.5, zorder=3)
 
-                    # Vẽ các đường giới hạn
-                    if cust_lsl: ax.axhline(cust_lsl, color="green", linestyle="-", linewidth=3, label=f"Cust LSL: {cust_lsl:.1f}")
-                    if cust_usl: ax.axhline(cust_usl, color="green", linestyle="-", linewidth=3, label=f"Cust USL: {cust_usl:.1f}")
-                    if int_lsl: ax.axhline(int_lsl, color="red", linestyle="--", linewidth=3, label=f"Int LSL: {int_lsl:.1f}")
-                    if int_usl: ax.axhline(int_usl, color="red", linestyle="--", linewidth=3, label=f"Int USL: {int_usl:.1f}")
-                    ax.axhline(ucl_3s, color="#ff7f0e", linestyle=":", linewidth=3, label=f"3σ UCL: {ucl_3s:.1f}")
-                    ax.axhline(lcl_3s, color="#ff7f0e", linestyle=":", linewidth=3, label=f"3σ LCL: {lcl_3s:.1f}")
+                    # 3. Vẽ các đường giới hạn
+                    if cust_lsl: ax_t.axhline(cust_lsl, color="green", linestyle="-", linewidth=3, label=f"Cust LSL: {cust_lsl:.1f}")
+                    if cust_usl: ax_t.axhline(cust_usl, color="green", linestyle="-", linewidth=3, label=f"Cust USL: {cust_usl:.1f}")
+                    if int_lsl: ax_t.axhline(int_lsl, color="red", linestyle="--", linewidth=3, label=f"Int LSL: {int_lsl:.1f}")
+                    if int_usl: ax_t.axhline(int_usl, color="red", linestyle="--", linewidth=3, label=f"Int USL: {int_usl:.1f}")
+                    ax_t.axhline(ucl_3s, color="#ff7f0e", linestyle=":", linewidth=3, label=f"3σ UCL: {ucl_3s:.1f}")
+                    ax_t.axhline(lcl_3s, color="#ff7f0e", linestyle=":", linewidth=3, label=f"3σ LCL: {lcl_3s:.1f}")
+                    ax_t.axhline(mu, color="purple", linestyle="-.", linewidth=2, label=f"Mean: {mu:.1f}")
+
+                    ax_t.set_title(f"{selected_label} Trend Analysis", pad=20)
+                    ax_t.set_xlabel("Coil Sequence")
+                    ax_t.set_ylabel("Value")
+                    ax_t.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), frameon=True, ncol=3, fontsize=9)
                     
-                    ax.set_title(f"{selected_label} Performance Trend", weight="bold", pad=20)
-                    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), frameon=True, ncol=3, fontsize=9)
-                    apply_full_border(ax)
+                    apply_full_border(ax_t)
                     plt.tight_layout()
-                    st.pyplot(fig)
+                    st.pyplot(fig_t)
 
                 with tab_dist:
                     # Tính SPC dựa trên Giới hạn NỘI BỘ
@@ -133,58 +145,71 @@ if uploaded_file:
                         cpl = (mu - int_lsl) / (3 * sigma)
                         cpk = min(cpu, cpl)
 
-                    fig_dist, ax_d = plt.subplots(figsize=(12, 6))
+                    fig_d, ax_d = plt.subplots(figsize=(12, 6))
                     ax_d.hist(plot_data, bins=20, density=True, alpha=0.5, color="#7FB3D5", edgecolor="black")
+                    
+                    # Normal Fit Curve
                     xs = np.linspace(plot_data.min()*0.9, plot_data.max()*1.1, 500)
                     ax_d.plot(xs, norm.pdf(xs, mu, sigma), color="#1E3A8A", linewidth=3, label="Normal Fit")
                     
-                    # Vẽ giới hạn đứng cho Histogram
-                    if int_lsl: ax_d.axvline(int_lsl, color="red", ls="--", lw=3, label="Int LSL")
-                    if int_usl: ax_d.axvline(int_usl, color="red", ls="--", lw=3, label="Int USL")
-                    ax_d.axvline(ucl_3s, color="#ff7f0e", ls=":", lw=3, label="3σ UCL")
-                    ax_d.axvline(lcl_3s, color="#ff7f0e", ls=":", lw=3, label="3σ LCL")
+                    # Vẽ giới hạn đứng cho Distribution
+                    if cust_lsl: ax_d.axvline(cust_lsl, color="green", linestyle="-", linewidth=3, label="Cust LSL")
+                    if cust_usl: ax_d.axvline(cust_usl, color="green", linestyle="-", linewidth=3, label="Cust USL")
+                    if int_lsl: ax_d.axvline(int_lsl, color="red", linestyle="--", linewidth=3, label="Int LSL")
+                    if int_usl: ax_d.axvline(int_usl, color="red", linestyle="--", linewidth=3, label="Int USL")
+                    ax_d.axvline(ucl_3s, color="#ff7f0e", linestyle=":", linewidth=3, label="3σ UCL/LCL")
+                    ax_d.axvline(lcl_3s, color="#ff7f0e", linestyle=":", linewidth=3)
 
-                    ax_d.set_title(f"{selected_label} Distribution & Capability", weight="bold")
-                    ax_d.legend(loc="upper right", fontsize=9)
+                    ax_d.set_title(f"{selected_label} Distribution & Capability", pad=20)
+                    ax_d.legend(loc="upper left", bbox_to_anchor=(1, 1))
+                    
                     apply_full_border(ax_d)
-                    st.pyplot(fig_dist)
+                    plt.tight_layout()
+                    st.pyplot(fig_d)
 
-                    # Bảng thống kê SPC (Dùng chuẩn Nội Bộ)
-                    eval_msg = "Excellent" if cpk >= 1.33 else ("Good" if cpk >= 1.0 else "Poor")
+                    # Bảng SPC Rating (Dùng chuẩn Nội Bộ)
+                    rating = "Excellent" if cpk >= 1.33 else ("Good" if cpk >= 1.0 else "Poor")
                     color_code = "green" if cpk >= 1.33 else ("orange" if cpk >= 1.0 else "red")
                     
                     df_spc = pd.DataFrame([{
                         "N": n, "Mean": mu, "Std": sigma, 
                         "Cp (Internal)": cp, "Ca (%)": ca, "Cpk (Internal)": cpk, 
-                        "Rating": eval_msg
+                        "Rating": rating
                     }])
                     
                     st.dataframe(df_spc.style.format("{:.3f}", subset=["Mean", "Std", "Cp (Internal)", "Ca (%)", "Cpk (Internal)"])
-                                 .map(lambda v: f'color: {color_code}; font-weight: bold', subset=['Rating']), hide_index=True, use_container_width=True)
+                                 .map(lambda v: f'color: {color_code}; font-weight: bold', subset=['Rating']), 
+                                 hide_index=True, use_container_width=True)
 
             else:
-                # SPC I-MR (Dùng 3-Sigma làm chuẩn thống kê)
+                # --- CHẾ ĐỘ 2: SPC CONTROL CHARTS (I-MR) ---
                 st.subheader("III. Statistical Process Control (I-MR)")
                 mr = plot_data.diff().abs()
                 mr_ucl = mr.mean() * 3.267
+                
                 fig_imr, (ax_i, ax_mr) = plt.subplots(2, 1, figsize=(12, 8), sharex=True)
                 
-                ax_i.plot(plot_data, marker="o", color="#1f77b4", lw=2)
-                ax_i.axhline(ucl_3s, color="red", ls="--", lw=2.5, label="UCL")
-                ax_i.axhline(lcl_3s, color="red", ls="--", lw=2.5, label="LCL")
-                ax_i.axhline(mu, color="green", ls="-", lw=2.5, label="Mean")
+                # I Chart
+                ax_i.plot(plot_data, marker="o", color="#1f77b4")
+                ax_i.axhline(ucl_3s, color="red", linestyle="--", label="UCL")
+                ax_i.axhline(lcl_3s, color="red", linestyle="--", label="LCL")
+                ax_i.axhline(mu, color="green", linestyle="-", label="Mean")
                 ax_i.set_title("Individual Chart (I)", weight="bold")
+                ax_i.legend(loc="right")
                 apply_full_border(ax_i)
                 
-                ax_mr.plot(mr, marker="o", color="#ff7f0e", lw=2)
-                ax_mr.axhline(mr_ucl, color="red", ls="--", lw=2.5, label="MR UCL")
-                ax_mr.axhline(mr.mean(), color="green", ls="-", lw=2.5, label="Avg MR")
+                # MR Chart
+                ax_mr.plot(mr, marker="o", color="#ff7f0e")
+                ax_mr.axhline(mr_ucl, color="red", linestyle="--", label="MR UCL")
+                ax_mr.axhline(mr.mean(), color="green", linestyle="-", label="Avg MR")
                 ax_mr.set_title("Moving Range Chart (MR)", weight="bold")
+                ax_mr.legend(loc="right")
                 apply_full_border(ax_mr)
                 
-                plt.tight_layout(); st.pyplot(fig_imr)
+                plt.tight_layout()
+                st.pyplot(fig_imr)
 
     except Exception as e:
-        st.error(f"Error: {e}")
+        st.error(f"Đã xảy ra lỗi: {e}")
 else:
-    st.info("👈 Please upload data to begin.")
+    st.info("👈 Vui lòng upload file báo cáo sản xuất (Excel/CSV) để bắt đầu.")
