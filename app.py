@@ -159,18 +159,15 @@ if uploaded_file:
 
                 # Labels dời lên trên cùng
                 add_dist_vline(v_lsl_tgt, "Cust LSL", "#2E7D32", "solid", "top left")
-                add_dist_vline(v_usl_tgt, "Cust USL", "#2E7D32", "solid", "top left")
+                add_dist_vline(v_usl_tgt, "Cust USL", "#2E7D32", "solid", "top right")
                 add_dist_vline(v_lsl_std, "Int LSL", "#D32F2F", "dash", "top right")
-                add_dist_vline(v_usl_std, "Int USL", "#D32F2F", "dash", "top right")
+                add_dist_vline(v_usl_std, "Int USL", "#D32F2F", "dash", "top left")
 
-                fig_dist.update_layout(
-                    template="simple_white", 
-                    height=500, 
-                    xaxis_range=x_range, 
-                    showlegend=False, 
-                    margin=dict(t=80),
-                    shapes=[dict(type='rect', xref='paper', yref='paper', x0=0, y0=0, x1=1, y1=1, line=dict(color='black', width=2))]
-                )
+                # Cập nhật Layout & Khung viền (Dùng axes mirror an toàn tuyệt đối)
+                fig_dist.update_layout(template="simple_white", height=500, xaxis_range=x_range, showlegend=False, margin=dict(t=80))
+                fig_dist.update_xaxes(showline=True, linewidth=1.5, linecolor='black', mirror=True)
+                fig_dist.update_yaxes(showline=True, linewidth=1.5, linecolor='black', mirror=True)
+                
                 st.plotly_chart(fig_dist, use_container_width=True, config=export_config)
 
                 # --- CHART 2: TREND BY SEQUENCE ---
@@ -218,13 +215,11 @@ if uploaded_file:
                         marker=dict(color='#D32F2F', size=9, symbol='circle', line=dict(color='white', width=1))
                     ))
 
-                fig_trend.update_layout(
-                    template="simple_white", 
-                    height=600, 
-                    margin=dict(t=50, r=20), 
-                    showlegend=False,
-                    shapes=[dict(type='rect', xref='paper', yref='paper', x0=0, y0=0, x1=1, y1=1, line=dict(color='black', width=2))]
-                )
+                # Cập nhật Layout & Khung viền
+                fig_trend.update_layout(template="simple_white", height=600, margin=dict(t=50, r=20), showlegend=False)
+                fig_trend.update_xaxes(showline=True, linewidth=1.5, linecolor='black', mirror=True)
+                fig_trend.update_yaxes(showline=True, linewidth=1.5, linecolor='black', mirror=True)
+                
                 st.plotly_chart(fig_trend, use_container_width=True, config=export_config)
 
             # ==========================================
@@ -253,15 +248,11 @@ if uploaded_file:
                 add_imr_hline(mr_mean, 'MR Mean', 'green', 2)
                 add_imr_hline(mr_mean * 3.267, 'MR UCL', 'red', 2)
 
-                fig_imr.update_layout(
-                    height=700, 
-                    template="simple_white", 
-                    showlegend=False,
-                    shapes=[
-                        dict(type='rect', xref='paper', yref='paper', x0=0, y0=0.55, x1=1, y1=1, line=dict(color='black', width=2)),
-                        dict(type='rect', xref='paper', yref='paper', x0=0, y0=0, x1=1, y1=0.45, line=dict(color='black', width=2))
-                    ]
-                )
+                # Cập nhật Layout & Khung viền
+                fig_imr.update_layout(height=700, template="simple_white", showlegend=False)
+                fig_imr.update_xaxes(showline=True, linewidth=1.5, linecolor='black', mirror=True)
+                fig_imr.update_yaxes(showline=True, linewidth=1.5, linecolor='black', mirror=True)
+                
                 st.plotly_chart(fig_imr, use_container_width=True, config=export_config)
 
     except Exception as e:
