@@ -1,347 +1,138 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import plotly.express as px
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from scipy.stats import norm
 
-# =========================================
-# PAGE CONFIG
-# =========================================
-st.set_page_config(
-    page_title="KB9Q Capability Dashboard",
-    layout="wide"
-)
+# --- 1. CẤU HÌNH GIAO DIỆN ---
+st.set_page_config(page_title="KB9Q Line 4 Dashboard", layout="wide")
 
-st.title("📊 KB9Q Line 4 Mechanical Capability Dashboard")
+# --- 2. THANH BÊN (SIDEBAR) ---
+st.sidebar.header("📂 Nguồn Dữ Liệu")
+uploaded_file = st.sidebar.file_uploader("Tải file Excel/CSV sản xuất", type=["xlsx", "csv", "xls"])
 
-# =========================================
-# FILE UPLOAD
-# =========================================
-uploaded = st.sidebar.file_uploader(
-    "Upload Excel / CSV",
-    type=["xlsx", "xls", "csv"]
-)
+if uploaded_file:
+    try:
+        # Đọc dữ liệu
+        df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
+        
+        # Bộ lọc 用途碼 (Mã ứng dụng)
+        st.sidebar.header("🔍 Bộ Lọc")
+        if "用途碼" in df.columns:
+            usage_list = df["用途碼"].dropna().unique().tolist()
+            selected_usages = st.sidebar.multiselect("Chọn Mã Ứng Dụng (用途碼):", options=usage_list, default=usage_list)
+            df_filtered = df[df["用途碼"].isin(selected_usages)]
+        else:
+            df_filtered = df
 
-if uploaded:
-
-    # =========================================
-    # LOAD DATA
-    # =========================================
-    df = (
-        pd.read_csv(uploaded)
-        if uploaded.name.endswith(".csv")
-        else pd.read_excel(uploaded)
-    )
-
-    # =========================================
-    # FILTER
-    # =========================================
-    if "用途碼" in df.columns:
-
-        usage = st.sidebar.multiselect(
-            "用途碼",
-            df["用途碼"].dropna().unique(),
-            default=df["用途碼"].dropna().unique()
-        )
-
-        df = df[df["用途碼"].isin(usage)]
-
-    # =========================================
-    # PROPERTY MAP
-    # =========================================
-    metrics = {
-
-        "YS": {
-            "data": "降伏強度 (YS)",
-            "lsl": "降伏強度[(min.)管制值]",
-            "usl": "降伏強度[(max.)管制值]"
-        },
-
-        "TS": {
-            "data": "抗拉強度 (TS)",
-            "lsl": "抗拉強度[(min.)管制值]",
-            "usl": "抗拉強度[(max.)管制值]"
-        },
-
-        "EL": {
-            "data": "伸長率 (EL)",
-            "lsl": "伸長率[(min.)管制值]",
-            "usl": "伸長率[(max.)管制值]"
-        },
-
-        "HRB": {
-            "data": "硬度HRB",
-            "lsl": "硬度[(min.)管制值]",
-            "usl": "硬度[(max.)管制值]"
-        },
-
-        "YPE": {
-            "data": "YPE",
-            "lsl": None,
-            "usl": None
+        # Ánh xạ các cột cơ tính chính xác theo yêu cầu
+        metrics_map = {
+            "降伏強度 (YS)": "降伏強度  (YS)", 
+            "抗拉強度 (TS)": "抗拉強度 (TS)",
+            "伸長率 (EL)": "伸長率 (EL)",
+            "硬度 (HRB)": "硬度HRB",
+            "YPE": "YPE"
         }
-    }
+        
+        available_display = [m for m, col_name in metrics_map.items() if col_name in df.columns]
+        
+        st.sidebar.header("📊 Cấu Hình View")
+        view_mode = st.sidebar.radio("Chọn Chế Độ Xem:", ["View 1: Trạng Thái Phân Bố & Trending", "View 2: Giới Hạn Kiểm Soát (SPC)"])
+        selected_display = st.sidebar.selectbox("Thông số cơ tính:", available_display)
+        
+        actual_data_col = metrics_map[selected_display]
+        search_keyword = selected_display.split(" ")[0]
 
-    # =========================================
-    # SELECT PROPERTY
-    # =========================================
-    selected = st.sidebar.selectbox(
-        "Mechanical Property",
-        list(metrics.keys())
-    )
+        # Tìm cột 管制值
+        lsl_col = next((col for col in df.columns if search_keyword in col and "min" in col.lower() and "管制" in col), None)
+        usl_col = next((col for col in df.columns if search_keyword in col and "max" in col.lower() and "管制" in col), None)
 
-    data_col = metrics[selected]["data"]
-    lsl_col = metrics[selected]["lsl"]
-    usl_col = metrics[selected]["usl"]
+        if actual_data_col in df_filtered.columns:
+            plot_data = df_filtered[actual_data_col].dropna().reset_index(drop=True)
+            lsl = float(df_filtered[lsl_col].median()) if lsl_col else plot_data.min()
+            usl = float(df_filtered[usl_col].median()) if usl_col else plot_data.max()
 
-    # =========================================
-    # DATA CLEANING
-    # =========================================
-    data = pd.to_numeric(
-        df[data_col],
-        errors="coerce"
-    ).dropna().reset_index(drop=True)
+            # --- RENDER VIEW 1 ---
+            if view_mode == "View 1: Trạng Thái Phân Bố & Trending":
+                st.header(f"📈 Phân Tích Trạng Thái & Xu Hướng: {selected_display}")
+                
+                col_left, col_right = st.columns(2)
+                
+                with col_left:
+                    st.subheader("Biểu đồ Trạng Thái Phân Bố (Normal Distribution)")
+                    
+                    # Tạo Histogram
+                    fig_dist = go.Figure()
+                    fig_dist.add_trace(go.Histogram(
+                        x=plot_data, 
+                        histnorm='probability density', 
+                        name='Thực tế',
+                        marker_color='#636EFA',
+                        opacity=0.7
+                    ))
+                    
+                    # Tính toán đường Normal Curve (Lý thuyết)
+                    mu, std = plot_data.mean(), plot_data.std()
+                    x_range = np.linspace(plot_data.min() - std, plot_data.max() + std, 100)
+                    p = norm.pdf(x_range, mu, std)
+                    
+                    fig_dist.add_trace(go.Scatter(
+                        x=x_range, y=p, 
+                        mode='lines', 
+                        name='Normal Curve',
+                        line=dict(color='black', width=3)
+                    ))
+                    
+                    # Thêm vạch giới hạn 管制值
+                    fig_dist.add_vline(x=lsl, line_dash="dash", line_color="red", annotation_text="LSL")
+                    fig_dist.add_vline(x=usl, line_dash="dash", line_color="red", annotation_text="USL")
+                    
+                    fig_dist.update_layout(template="plotly_white", xaxis_title=selected_display, yaxis_title="Mật độ")
+                    st.plotly_chart(fig_dist, use_container_width=True)
+                
+                with col_right:
+                    st.subheader("Đường Xu Hướng Dây Chuyền (Trending Line)")
+                    # Biểu đồ Trending với markers thể hiện từng điểm dữ liệu
+                    fig_trend = px.line(
+                        df_filtered, 
+                        y=actual_data_col, 
+                        markers=True, 
+                        template="plotly_white",
+                        color_discrete_sequence=['#19D3F3']
+                    )
+                    # Thêm đường xu hướng trung bình động hoặc Lowess để thấy rõ Trending
+                    fig_trend.add_traces(px.scatter(df_filtered, y=actual_data_col, trendline="lowess", trendline_color_override="orange").data)
+                    
+                    fig_trend.update_layout(xaxis_title="Thứ tự sản xuất (Cuộn)", yaxis_title=actual_data_col)
+                    st.plotly_chart(fig_trend, use_container_width=True)
 
-    # =========================================
-    # SPEC LIMIT
-    # =========================================
-    lsl = (
-        pd.to_numeric(df[lsl_col], errors="coerce").median()
-        if lsl_col and lsl_col in df.columns
-        else data.min()
-    )
+            # --- RENDER VIEW 2 ---
+            else:
+                st.header(f"🛡️ Giới Hạn Kiểm Soát Thực Tế: {selected_display}")
+                mean_val = plot_data.mean()
+                std_val = plot_data.std()
+                mr = plot_data.diff().abs()
+                mean_mr = mr.mean()
+                ucl_i = mean_val + 2.66 * mean_mr
+                lcl_i = mean_val - 2.66 * mean_mr
+                cpk = min((usl - mean_val)/(3*std_val), (mean_val - lsl)/(3*std_val)) if std_val > 0 else 0
 
-    usl = (
-        pd.to_numeric(df[usl_col], errors="coerce").median()
-        if usl_col and usl_col in df.columns
-        else data.max()
-    )
+                m1, m2, m3, m4 = st.columns(4)
+                m1.metric("Mean", f"{mean_val:.2f}")
+                m2.metric("UCL", f"{ucl_i:.2f}")
+                m3.metric("LCL", f"{lcl_i:.2f}")
+                m4.metric("Cpk (管制)", f"{cpk:.2f}")
 
-    # =========================================
-    # BASIC STATISTICS
-    # =========================================
-    mean = data.mean()
-    std = data.std()
+                fig_imr = make_subplots(rows=2, cols=1, shared_xaxes=True)
+                fig_imr.add_trace(go.Scatter(y=plot_data, mode='lines+markers', name='Data'), row=1, col=1)
+                fig_imr.add_hline(y=ucl_i, line_dash="dot", line_color="red", row=1, col=1)
+                fig_imr.add_hline(y=lcl_i, line_dash="dot", line_color="red", row=1, col=1)
+                fig_imr.update_layout(height=600, template="plotly_white")
+                st.plotly_chart(fig_imr, use_container_width=True)
 
-    spec_center = (lsl + usl) / 2
-
-    # =========================================
-    # PROCESS CAPABILITY
-    # =========================================
-    cp = (usl - lsl) / (6 * std) if std > 0 else 0
-
-    ca = abs(mean - spec_center) / (
-        (usl - lsl) / 2
-    )
-
-    cpu = (usl - mean) / (3 * std)
-    cpl = (mean - lsl) / (3 * std)
-
-    cpk = min(cpu, cpl)
-
-    # =========================================
-    # CONTROL LIMIT
-    # =========================================
-    ucl = mean + 3 * std
-    lcl = mean - 3 * std
-
-    # =========================================
-    # KPI
-    # =========================================
-    k1, k2, k3, k4 = st.columns(4)
-
-    k1.metric("Mean", f"{mean:.2f}")
-    k2.metric("Cp", f"{cp:.2f}")
-    k3.metric("Ca", f"{ca:.2f}")
-    k4.metric(
-        "Cpk",
-        f"{cpk:.2f}",
-        delta="Stable" if cpk >= 1.33 else "Risk"
-    )
-
-    # =========================================
-    # CHART LAYOUT
-    # =========================================
-    col1, col2 = st.columns(2)
-
-    # =========================================
-    # DISTRIBUTION CHART
-    # =========================================
-    with col1:
-
-        fig_dist = go.Figure()
-
-        # Histogram
-        fig_dist.add_trace(
-            go.Histogram(
-                x=data,
-                histnorm="probability density",
-                nbinsx=30,
-                name="Distribution"
-            )
-        )
-
-        # Normal Curve
-        x = np.linspace(data.min(), data.max(), 200)
-
-        y = norm.pdf(x, mean, std)
-
-        fig_dist.add_trace(
-            go.Scatter(
-                x=x,
-                y=y,
-                mode="lines",
-                name="Normal Curve"
-            )
-        )
-
-        # Mean
-        fig_dist.add_vline(
-            x=mean,
-            line_color="blue",
-            annotation_text="Mean"
-        )
-
-        # Spec Center
-        fig_dist.add_vline(
-            x=spec_center,
-            line_dash="dot",
-            line_color="green",
-            annotation_text="Spec Center"
-        )
-
-        # LSL
-        fig_dist.add_vline(
-            x=lsl,
-            line_dash="dash",
-            line_color="red",
-            annotation_text="LSL"
-        )
-
-        # USL
-        fig_dist.add_vline(
-            x=usl,
-            line_dash="dash",
-            line_color="red",
-            annotation_text="USL"
-        )
-
-        fig_dist.update_layout(
-            title=f"{selected} Distribution",
-            template="plotly_white",
-            height=500
-        )
-
-        st.plotly_chart(
-            fig_dist,
-            use_container_width=True
-        )
-
-    # =========================================
-    # TREND CHART
-    # =========================================
-    with col2:
-
-        rolling = data.rolling(10).mean()
-
-        outlier = data[
-            (data > ucl) | (data < lcl)
-        ]
-
-        fig_trend = go.Figure()
-
-        # Actual
-        fig_trend.add_trace(
-            go.Scatter(
-                y=data,
-                mode="lines+markers",
-                name="Actual"
-            )
-        )
-
-        # Rolling Mean
-        fig_trend.add_trace(
-            go.Scatter(
-                y=rolling,
-                mode="lines",
-                name="Rolling Mean"
-            )
-        )
-
-        # Outlier
-        fig_trend.add_trace(
-            go.Scatter(
-                x=outlier.index,
-                y=outlier.values,
-                mode="markers",
-                marker=dict(size=10, color="red"),
-                name="Outlier"
-            )
-        )
-
-        # Mean
-        fig_trend.add_hline(
-            y=mean,
-            line_color="blue"
-        )
-
-        # UCL
-        fig_trend.add_hline(
-            y=ucl,
-            line_dash="dash",
-            line_color="red"
-        )
-
-        # LCL
-        fig_trend.add_hline(
-            y=lcl,
-            line_dash="dash",
-            line_color="red"
-        )
-
-        fig_trend.update_layout(
-            title=f"{selected} Trend",
-            template="plotly_white",
-            height=500
-        )
-
-        st.plotly_chart(
-            fig_trend,
-            use_container_width=True
-        )
-
-    # =========================================
-    # SUMMARY TABLE
-    # =========================================
-    st.subheader("📋 SPC Summary")
-
-    summary = pd.DataFrame({
-
-        "Metric": [
-            "Mean",
-            "STD",
-            "LSL",
-            "USL",
-            "Cp",
-            "Ca",
-            "Cpk"
-        ],
-
-        "Value": [
-            round(mean, 2),
-            round(std, 2),
-            round(lsl, 2),
-            round(usl, 2),
-            round(cp, 2),
-            round(ca, 2),
-            round(cpk, 2)
-        ]
-    })
-
-    st.dataframe(
-        summary,
-        use_container_width=True
-    )
-
+    except Exception as e:
+        st.error(f"Lỗi: {e}")
 else:
-    st.info("👈 Upload production data")
+    st.info("👈 Hãy tải file dữ liệu vào thanh Sidebar bên trái.")
