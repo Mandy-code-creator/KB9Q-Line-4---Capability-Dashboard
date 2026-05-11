@@ -64,7 +64,7 @@ export_config = {
 
 # --- 3. THANH BÊN (SIDEBAR) ---
 st.sidebar.header("📂 NGUỒN DỮ LIỆU")
-uploaded_file = st.sidebar.file_uploader("Tải file Excel/CSV báo cáo Line 4", type=["xlsx", "csv", "xls"])
+uploaded_file = st.sidebar.file_uploader("Tải file Excel/CSV báo cáo", type=["xlsx", "csv", "xls"])
 
 if uploaded_file:
     try:
@@ -86,7 +86,7 @@ if uploaded_file:
             st.stop()
 
         selected_label = st.sidebar.selectbox("Thông số cơ tính:", available)
-        view_mode = st.sidebar.radio("Cài đặt hiển thị:", ["Phân tích Tổng thể (View 1)", "Biểu đồ Kiểm soát SPC I-MR (View 2)"])
+        view_mode = st.sidebar.radio("Cài đặt hiển thị:", ["Phân tích Tổng thể (View 1)", "Biểu đồ Kiểm soát SPC (View 2)"])
         
         short_key = metrics_map[selected_label]
         data_col = find_data_col(df, short_key)
@@ -102,100 +102,143 @@ if uploaded_file:
             n, mu, sigma = len(plot_data), plot_data.mean(), plot_data.std()
             ucl, lcl = mu + 3*sigma, mu - 3*sigma
 
-            st.title(f"🚀 Phân tích Chất lượng: {selected_label}")
-            st.caption("💡 Mẹo: Rê chuột vào góc phải biểu đồ, nhấn biểu tượng 📷 (Camera) để tải ảnh sắc nét chèn vào file Word.")
+            # Tính Cp và Cpk
+            t_lsl = v_lsl_cust if v_lsl_cust else v_lsl_int
+            t_usl = v_usl_cust if v_usl_cust else v_usl_int
+            
+            cp, cpk = None, None
+            if sigma > 0:
+                if t_lsl and t_usl:
+                    cp = (t_usl - t_lsl) / (6 * sigma)
+                    cpk = min((t_usl-mu)/(3*sigma), (mu-t_lsl)/(3*sigma))
+                elif t_lsl: 
+                    cpk = (mu - t_lsl)/(3*sigma)
+                elif t_usl: 
+                    cpk = (t_usl - mu)/(3*sigma)
 
-            # KHỐI KPI
+            st.title(f"🚀 Phân tích Chất lượng: {selected_label}")
+            
             k1, k2, k3, k4 = st.columns(4)
             k1.metric("Tổng số mẫu (N)", n)
             k2.metric("Trung bình (μ)", f"{mu:.2f}")
             k3.metric("Độ lệch (σ)", f"{sigma:.2f}")
-            
-            t_lsl = v_lsl_cust if v_lsl_cust else v_lsl_int
-            t_usl = v_usl_cust if v_usl_cust else v_usl_int
-            cpk = None
-            if sigma > 0:
-                if t_lsl and t_usl: cpk = min((t_usl-mu)/(3*sigma), (mu-t_lsl)/(3*sigma))
-                elif t_lsl: cpk = (mu - t_lsl)/(3*sigma)
-                elif t_usl: cpk = (t_usl - mu)/(3*sigma)
             k4.metric("Năng lực Cpk", f"{cpk:.2f}" if cpk else "N/A", delta="Đạt" if cpk and cpk >= 1.33 else "Cảnh báo" if cpk else None)
 
             if "View 1" in view_mode:
                 
-                # --- 1. BIỂU ĐỒ PHÂN BỐ ---
-                st.subheader("I. Trạng thái phân bố & Năng lực")
+                # ==========================================
+                # 1. BIỂU ĐỒ PHÂN BỐ (CHUẨN MINITAB STYLE)
+                # ==========================================
+                st.subheader("I. Trạng thái phân bố (Histogram)")
+                
                 k_bins = math.ceil(1 + 3.322 * math.log10(n)) if n > 0 else 10
                 
+                # Tính toán X-range
                 pts = [plot_data.min(), plot_data.max()]
                 all_lims = [v for v in [v_lsl_cust, v_usl_cust, v_lsl_int, v_usl_int, lcl, ucl] if v]
                 pts.extend(all_lims)
                 min_pt, max_pt = min(pts), max(pts)
-                padding = (max_pt - min_pt) * 0.08 if max_pt != min_pt else max_pt * 0.05
+                padding = (max_pt - min_pt) * 0.1 if max_pt != min_pt else max_pt * 0.05
                 x_range = [min_pt - padding, max_pt + padding]
 
+                # Tính toán Y-range (Đẩy cao lên 35% để lấy chỗ chứa Hộp thông số)
+                counts, _ = np.histogram(plot_data, bins=k_bins)
+                max_count = counts.max() if len(counts) > 0 else 10
+                bin_w = (plot_data.max() - plot_data.min()) / k_bins if n > 1 else 1
+                y_c_max = norm.pdf(mu, mu, sigma) * n * bin_w if sigma > 0 else 0
+                max_y_axis = max(max_count, y_c_max) * 1.35 # +35% headroom
+
                 fig_dist = go.Figure()
-                fig_dist.add_trace(go.Histogram(x=plot_data, nbinsx=k_bins, marker_color='#3498db', opacity=0.7, name="Dữ liệu"))
                 
+                # Histogram (Giống màu Line Hist trong hình)
+                fig_dist.add_trace(go.Histogram(
+                    x=plot_data, nbinsx=k_bins, name='Thực tế (LINE)',
+                    marker_color='#85B4D3', marker_line_color='white', marker_line_width=1, opacity=0.9
+                ))
+                
+                # Đường chuẩn Normal (Xanh đậm nét dày)
                 if sigma > 0:
-                    bin_w = (plot_data.max() - plot_data.min()) / k_bins if n > 1 else 1
                     x_c = np.linspace(x_range[0], x_range[1], 400)
                     y_c = norm.pdf(x_c, mu, sigma) * n * bin_w
-                    fig_dist.add_trace(go.Scatter(x=x_c, y=y_c, mode='lines', line=dict(color='#113763', width=2), name="Đường chuẩn"))
+                    fig_dist.add_trace(go.Scatter(
+                        x=x_c, y=y_c, mode='lines', name='Đường chuẩn (Fit)',
+                        line=dict(color='#003F88', width=3)
+                    ))
 
-                # Chú thích Histogram dạng Text trơn (Không Box)
-                limit_configs_dist = [
-                    (v_lsl_cust, "KHÁCH MIN", "#FF0000", "dash"), 
-                    (v_usl_cust, "KHÁCH MAX", "#FF0000", "dash"),
-                    (v_lsl_int, "Nội bộ Min", "#FF9933", "dot"), 
-                    (v_usl_int, "Nội bộ Max", "#FF9933", "dot")
-                ]
-                for v, lbl, clr, sty in limit_configs_dist:
-                    if v:
-                        fig_dist.add_vline(x=v, line_dash=sty, line_color=clr, line_width=1.5)
-                        fig_dist.add_annotation(
-                            x=v, y=1.02, yref="paper", 
-                            text=f"<b>{lbl}: {v}</b>", 
-                            textangle=-90, font=dict(color=clr, size=11), 
-                            showarrow=False, xanchor="center", yanchor="bottom"
-                        )
+                # Thêm Vline thực tế
+                if v_lsl_cust: fig_dist.add_vline(x=v_lsl_cust, line_dash="dash", line_color="#FF0000", line_width=2)
+                if v_usl_cust: fig_dist.add_vline(x=v_usl_cust, line_dash="dash", line_color="#FF0000", line_width=2)
+                if v_lsl_int: fig_dist.add_vline(x=v_lsl_int, line_dash="dashdot", line_color="#800080", line_width=2)
+                if v_usl_int: fig_dist.add_vline(x=v_usl_int, line_dash="dashdot", line_color="#800080", line_width=2)
 
-                fig_dist.update_layout(template="simple_white", height=450, xaxis_range=x_range, showlegend=False, 
-                                      yaxis_title="Số lượng cuộn (Coils)", xaxis_title=f"Giá trị {selected_label}",
-                                      margin=dict(t=80)) # Thêm lề trên để chứa chữ
+                # Các đường giả (Dummy traces) để tạo Legend giống hệt hình mẫu
+                fig_dist.add_trace(go.Scatter(x=[None], y=[None], mode='lines', name='Khách hàng (Spec)', line=dict(color='#FF0000', width=2, dash='dash')))
+                fig_dist.add_trace(go.Scatter(x=[None], y=[None], mode='lines', name='Nội bộ (Internal)', line=dict(color='#800080', width=2, dash='dashdot')))
+
+                # Hộp SPC Indices (Góc trên bên trái)
+                cp_text = f"{cp:.2f}" if cp else "N/A"
+                cpk_text = f"{cpk:.2f}" if cpk else "N/A"
+                rating = "Tốt" if cpk and cpk >= 1.33 else "Cảnh báo" if cpk else "N/A"
+                
+                box_text = f"<b>SPC Indices (LINE):</b><br>N = {n}<br>Mean = {mu:.2f}<br>Std = {sigma:.2f}<br>Cp = {cp_text}<br>Cpk = {cpk_text}<br>Rating: {rating}"
+                
+                fig_dist.add_annotation(
+                    xref="paper", yref="paper", x=0.02, y=0.96,
+                    text=box_text, showarrow=False, align="left",
+                    font=dict(size=12, family="Courier New, monospace", color="black"),
+                    bgcolor="rgba(250, 250, 250, 0.9)", bordercolor="#D3D3D3", borderwidth=1, borderpad=8,
+                    xanchor="left", yanchor="top"
+                )
+
+                # Cấu hình Layout (Viền đen xung quanh, Lưới xám, Legend góc phải)
+                fig_dist.update_layout(
+                    title=dict(text=f"<b>{selected_label} Distribution - Line 4</b>", x=0.5, font=dict(size=16)),
+                    plot_bgcolor='white', paper_bgcolor='white',
+                    height=500, xaxis_range=x_range, yaxis_range=[0, max_y_axis],
+                    xaxis_title="Giá trị", yaxis_title="Số lượng cuộn (Number of Coils)",
+                    showlegend=True,
+                    legend=dict(
+                        x=0.98, y=0.98, xanchor="right", yanchor="top",
+                        bgcolor="rgba(255, 255, 255, 0.9)", bordercolor="#D3D3D3", borderwidth=1
+                    )
+                )
+                
+                # Bật khung viền và lưới cho trục X, Y
+                fig_dist.update_xaxes(showline=True, linewidth=1, linecolor='black', mirror=True, showgrid=True, gridcolor='#E5E5E5')
+                fig_dist.update_yaxes(showline=True, linewidth=1, linecolor='black', mirror=True, showgrid=True, gridcolor='#E5E5E5')
+
                 st.plotly_chart(fig_dist, use_container_width=True, config=export_config)
 
-                # --- 2. BIỂU ĐỒ TRENDING ---
+                # ==========================================
+                # 2. BIỂU ĐỒ TRENDING
+                # ==========================================
                 st.subheader("II. Xu hướng sản xuất & Các tầng giới hạn")
                 fig_trend = go.Figure()
                 fig_trend.add_trace(go.Scatter(x=plot_data.index, y=plot_data, mode='lines+markers', 
                                               line=dict(color='#1f77b4', width=1.5),
                                               marker=dict(size=5, color='#1f77b4')))
 
-                # Chú thích Trending dạng Text trơn (Giống hình mẫu)
-                # Mean: Xanh lá nét đứt, UCL/LCL: Đỏ nét đứt, Nội bộ: Cam nét chấm bi
                 limit_configs_trend = [
-                    (mu, "Mean", "#008000", "dash"), 
-                    (ucl, "UCL (+3σ)", "#FF0000", "dash"), 
-                    (lcl, "LCL (-3σ)", "#FF0000", "dash"),
-                    (v_usl_int, "Nội bộ Max", "#FF9933", "dot"), 
-                    (v_lsl_int, "Nội bộ Min", "#FF9933", "dot"),
-                    (v_usl_cust, "KHÁCH MAX", "#113763", "dashdot"), 
-                    (v_lsl_cust, "KHÁCH MIN", "#113763", "dashdot")
+                    (mu, "Mean", "#008000", "dash", 1.01), 
+                    (ucl, "UCL (+3σ)", "#FF0000", "dash", 1.01), 
+                    (lcl, "LCL (-3σ)", "#FF0000", "dash", 1.01),
+                    (v_usl_int, "Nội bộ Max", "#FF9933", "dot", 1.12), 
+                    (v_lsl_int, "Nội bộ Min", "#FF9933", "dot", 1.12),
+                    (v_usl_cust, "KHÁCH MAX", "#113763", "dashdot", 1.23), 
+                    (v_lsl_cust, "KHÁCH MIN", "#113763", "dashdot", 1.23)
                 ]
 
-                for v, lbl, clr, sty in limit_configs_trend:
+                for v, lbl, clr, sty, pos in limit_configs_trend:
                     if v:
                         fig_trend.add_hline(y=v, line_dash=sty, line_color=clr, line_width=1.2)
                         fig_trend.add_annotation(
-                            x=1.02, y=v, xref="paper", yref="y",
+                            x=pos, y=v, xref="paper", yref="y",
                             text=f"<b>{lbl}: {v:.1f}</b>",
-                            showarrow=False, 
-                            font=dict(color=clr, size=12), 
+                            showarrow=False, font=dict(color=clr, size=11), 
                             xanchor="left", yanchor="middle"
                         )
 
-                # Rất quan trọng: margin r=250 để lề phải rộng rãi chứa Text
-                fig_trend.update_layout(template="simple_white", height=500, margin=dict(l=50, r=250, t=30, b=50), showlegend=False,
+                fig_trend.update_layout(template="simple_white", height=500, margin=dict(l=50, r=260, t=30, b=50), showlegend=False,
                                        xaxis_title="Thứ tự cuộn (Sequence)", yaxis_title="Giá trị đo thực tế",
                                        font=dict(family="Segoe UI", size=12))
                 
