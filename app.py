@@ -130,7 +130,24 @@ if uploaded_file:
 
                     with tab_trend:
                         fig_t, ax_t = plt.subplots(figsize=(12, 6))
-                        ax_t.plot(np.arange(1, n+1), plot_data, marker="o", markersize=6, color="#1f77b4", label="Actual Value")
+                        x_coords = np.arange(1, n+1)
+                        
+                        # 1. Vẽ đường xu hướng và tất cả các điểm màu xanh (Mặc định)
+                        ax_t.plot(x_coords, plot_data, marker="o", markersize=6, color="#1f77b4", label="Actual Value", zorder=1)
+                        
+                        # 2. XÁC ĐỊNH & TÔ ĐỎ CÁC ĐIỂM VƯỢT GIỚI HẠN (Out of Control)
+                        mask_out = pd.Series([False] * len(plot_data))
+                        if int_usl is not None:
+                            mask_out = mask_out | (plot_data > int_usl)
+                        if int_lsl is not None:
+                            mask_out = mask_out | (plot_data < int_lsl)
+                            
+                        # Nếu có điểm vượt giới hạn, vẽ đè chấm màu đỏ lên
+                        if mask_out.any():
+                            ax_t.scatter(x_coords[mask_out], plot_data[mask_out], color="red", s=80, 
+                                         edgecolor="black", zorder=2, label="Out of Int. Limit")
+
+                        # 3. Vẽ các đường giới hạn (Limit Lines)
                         ax_t.axhline(mu, color="blue", ls="-", lw=2, label=f"Mean: {mu:.1f}")
                         if cust_lsl: ax_t.axhline(cust_lsl, color="green", ls="-", lw=3, label="Cust LSL")
                         if cust_usl: ax_t.axhline(cust_usl, color="green", ls="-", lw=3, label="Cust USL")
@@ -138,6 +155,8 @@ if uploaded_file:
                         if int_usl: ax_t.axhline(int_usl, color="red", ls="--", lw=3, label="Int USL")
                         ax_t.axhline(ucl_v1, color="#ff7f0e", ls=":", lw=3, label="3σ UCL")
                         ax_t.axhline(lcl_v1, color="#ff7f0e", ls=":", lw=3, label="3σ LCL")
+                        
+                        # 4. Định dạng biểu đồ
                         ax_t.set_xlabel("Coil Sequence")
                         ax_t.set_ylabel(f"{selected_label} Value")
                         ax_t.set_title(f"{selected_label} Trend Analysis (N={n})", pad=20)
