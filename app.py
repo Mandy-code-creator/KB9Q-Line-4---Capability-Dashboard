@@ -22,7 +22,7 @@ plt.rcParams.update({
     'legend.fontsize': 10,
     'font.weight': 'bold',
     'lines.linewidth': 2.5,
-    'figure.dpi': 150
+    'figure.dpi': 150  # Tăng DPI hiển thị trên web cho sắc nét
 })
 
 # ==========================================
@@ -59,15 +59,24 @@ def format_num(val):
     return str(int(rounded)) if rounded == int(rounded) else str(rounded)
 
 def export_to_word(figures, titles):
+    """
+    Xuất danh sách biểu đồ plt.figure ra file Word với độ phân giải cao
+    """
     doc = Document()
     doc.add_heading('Quality Analytics Report', 0)
+
     for fig, title in zip(figures, titles):
         doc.add_heading(title, level=1)
+        
+        # Lưu ảnh vào bộ nhớ đệm với DPI cao (300) để không bị nhòe
         img_stream = io.BytesIO()
         fig.savefig(img_stream, format='png', dpi=300, bbox_inches='tight')
         img_stream.seek(0)
+        
+        # Thêm vào word và chỉnh kích thước ảnh (rộng 5.5 inches)
         doc.add_picture(img_stream, width=Inches(5.5))
         doc.add_paragraph("-" * 50)
+    
     out_io = io.BytesIO()
     doc.save(out_io)
     out_io.seek(0)
@@ -114,7 +123,7 @@ if uploaded_file:
 
                 st.title(f"📊 Quality Analytics: {selected_label}")
 
-                # --- VIEW 1: PROCESS ANALYTICS ---
+                # VIEW 1: PROCESS ANALYTICS
                 if view_mode == "Process Analytics":
                     tab_trend, tab_dist = st.tabs(["📈 Trend Analysis", "📊 Distribution & SPC"])
                     ucl_v1, lcl_v1 = mu + 3*sigma_fixed, mu - 3*sigma_fixed
@@ -122,30 +131,59 @@ if uploaded_file:
                     with tab_trend:
                         fig_t, ax_t = plt.subplots(figsize=(12, 6))
                         x_coords = np.arange(1, n+1)
+                        
+                        # 1. Vẽ đường xu hướng và tất cả các điểm màu xanh (Mặc định)
                         ax_t.plot(x_coords, plot_data, marker="o", markersize=6, color="#1f77b4", label="Actual Value", zorder=1)
                         
+                        # 2. XÁC ĐỊNH & TÔ ĐỎ CÁC ĐIỂM VƯỢT GIỚI HẠN (Out of Control)
                         mask_out = pd.Series([False] * len(plot_data))
-                        if int_usl is not None: mask_out = mask_out | (plot_data > int_usl)
-                        if int_lsl is not None: mask_out = mask_out | (plot_data < int_lsl)
+                        if int_usl is not None:
+                            mask_out = mask_out | (plot_data > int_usl)
+                        if int_lsl is not None:
+                            mask_out = mask_out | (plot_data < int_lsl)
+                            
+                        # Nếu có điểm vượt giới hạn, vẽ đè chấm màu đỏ lên
                         if mask_out.any():
-                            ax_t.scatter(x_coords[mask_out], plot_data[mask_out], color="red", s=80, edgecolor="black", zorder=2, label="Out of Int. Limit")
+                            ax_t.scatter(x_coords[mask_out], plot_data[mask_out], color="red", s=80, 
+                                         edgecolor="black", zorder=2, label="Out of Int. Limit")
 
+                        # 3. Vẽ các đường giới hạn (Limit Lines)
                         ax_t.axhline(mu, color="blue", ls="-", lw=2, label=f"Mean: {mu:.1f}")
                         if cust_lsl: ax_t.axhline(cust_lsl, color="green", ls="-", lw=3, label="Cust LSL")
                         if cust_usl: ax_t.axhline(cust_usl, color="green", ls="-", lw=3, label="Cust USL")
                         if int_lsl: ax_t.axhline(int_lsl, color="red", ls="--", lw=3, label="Int LSL")
                         if int_usl: ax_t.axhline(int_usl, color="red", ls="--", lw=3, label="Int USL")
-                        ax_t.axhline(ucl_v1, color="#6A0DAD", ls=":", lw=3, label="3σ UCL") 
-                        ax_t.axhline(lcl_v1, color="#6A0DAD", ls=":", lw=3, label="3σ LCL")
-
+                        ax_t.axhline(ucl_v1, color="#ff7f0e", ls=":", lw=3, label="3σ UCL")
+                        ax_t.axhline(lcl_v1, color="#ff7f0e", ls=":", lw=3, label="3σ LCL")
+                        
+                        # 4. Định dạng biểu đồ
                         ax_t.set_xlabel("Coil Sequence")
                         ax_t.set_ylabel(f"{selected_label} Value")
-                        ax_t.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), ncol=4)
+                        ax_t.set_title(f"{selected_label} Trend Analysis (N={n})", pad=20)
+                        ax_t.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), ncol=4, fontsize=9)
                         apply_full_border(ax_t); plt.tight_layout(); st.pyplot(fig_t)
+                        
+                        # Nút xuất ảnh Trend ra Word
+                        buf_t = export_to_word([fig_t], [f"Trend Analysis - {selected_label}"])
+                        st.download_button(
+                            label="📥 Download Trend Chart (High-Res Word)",
+                            data=buf_t,
+                            file_name=f"Trend_Report_{selected_label}.docx",
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        )
 
                     with tab_dist:
                         fig_d, ax_d = plt.subplots(figsize=(12, 6))
-                        ax_d.hist(plot_data, bins=20, alpha=0.4, color="#7FB3D5", edgecolor="black")
+                        ax_d.hist(plot_data, bins=20, density=False, alpha=0.4, color="#7FB3D5", edgecolor="black")
+                        ax_d.yaxis.set_major_locator(MaxNLocator(integer=True))
+                        ax_d.set_xlabel(f"{selected_label} Value")
+                        ax_d.set_ylabel("Coil Count")
+                        
+                        ax_pdf = ax_d.twinx()
+                        x_min_fit, x_max_fit = min(plot_data.min(), mu - 4*sigma_fixed), max(plot_data.max(), mu + 4*sigma_fixed)
+                        xs = np.linspace(x_min_fit, x_max_fit, 500)
+                        ax_pdf.plot(xs, norm.pdf(xs, mu, sigma_fixed), color="#1E3A8A", lw=3, label="Normal Fit")
+                        ax_pdf.set_yticks([])
                         
                         def add_vline_std(ax, val, color, ls, label, level=0):
                             if val is not None:
@@ -159,23 +197,35 @@ if uploaded_file:
                         add_vline_std(ax_d, cust_usl, "green", "-", "Cust USL", 0)
                         add_vline_std(ax_d, int_lsl, "red", "--", "Int LSL", 1)
                         add_vline_std(ax_d, int_usl, "red", "--", "Int USL", 1)
-                        add_vline_std(ax_d, ucl_v1, "#6A0DAD", ":", "3σ UCL", 2)
-                        add_vline_std(ax_d, lcl_v1, "#6A0DAD", ":", "3σ LCL", 2)
+                        add_vline_std(ax_d, ucl_v1, "#ff7f0e", ":", "3σ UCL", 2)
+                        add_vline_std(ax_d, lcl_v1, "#ff7f0e", ":", "3σ LCL", 2)
+                        
+                        ax_d.set_title(f"{selected_label} Distribution (N={n})", pad=55)
                         ax_d.legend(loc="upper left", bbox_to_anchor=(1, 1))
                         apply_full_border(ax_d); plt.tight_layout(); st.pyplot(fig_d)
+                        
+                        # Nút xuất ảnh Distribution ra Word
+                        buf_d = export_to_word([fig_d], [f"Distribution Analysis - {selected_label}"])
+                        st.download_button(
+                            label="📥 Download Distribution Chart (High-Res Word)",
+                            data=buf_d,
+                            file_name=f"Dist_Report_{selected_label}.docx",
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        )
 
-                # --- VIEW 2: SPC OPTIMIZATION (ĐÃ KHÔI PHỤC BẢNG) ---
+                # VIEW 2: SPC OPTIMIZATION
                 elif view_mode == "SPC Control Charts (I-MR)":
                     st.subheader("II. Control Limit Optimization & I-MR")
                     c_i1, c_i2 = st.columns(2)
                     with c_i1: k_std = st.number_input("Target Multiplier for StdDev (Sigma):", 1.0, 6.0, 3.0, 0.1)
                     with c_i2: k_iqr = st.number_input("Target Multiplier for IQR (k-factor):", 1.0, 6.0, 1.5, 0.1)
                     
+                    # Tính toán IQR chuẩn xác
                     q1, q3 = plot_data.quantile(0.25), plot_data.quantile(0.75)
                     iqr_val = q3 - q1
-                    iqr_lsl, iqr_usl = q1 - (k_iqr * iqr_val), q3 + (k_iqr * iqr_val)
+                    iqr_lsl = q1 - (k_iqr * iqr_val)
+                    iqr_usl = q3 + (k_iqr * iqr_val)
 
-                    # KHÔI PHỤC 2 BẢNG TÍNH THÔNG SỐ
                     col_r1, col_r2 = st.columns(2)
                     with col_r1:
                         st.write("**Method: Standard Deviation**")
@@ -193,33 +243,77 @@ if uploaded_file:
                     fig_imr, ax_i = plt.subplots(figsize=(12, 6))
                     ax_i.plot(plot_data, marker="o", color="#1f77b4", label="Actual Data", alpha=0.7)
                     ax_i.axhline(mu, color="blue", ls="-", lw=2, label="Mean")
+                    
                     if int_lsl: ax_i.axhline(int_lsl, color="red", ls="--", lw=2, label="Current Int LSL")
                     if int_usl: ax_i.axhline(int_usl, color="red", ls="--", lw=2, label="Current Int USL")
                     
+                    if cust_lsl: ax_i.axhline(cust_lsl, color="green", ls="-", lw=2.5, label="Cust LSL")
+                    if cust_usl: ax_i.axhline(cust_usl, color="green", ls="-", lw=2.5, label="Cust USL")
+                    
                     ax_i.axhline(mu + k_std*sigma_fixed, color="darkred", ls="-", label=f"Prop USL ({k_std}σ)")
                     ax_i.axhline(mu - k_std*sigma_fixed, color="darkred", ls="-", label=f"Prop LSL ({k_std}σ)")
-                    ax_i.axhline(iqr_usl, color="brown", ls="--", label=f"Prop USL (IQR)")
-                    ax_i.axhline(iqr_lsl, color="brown", ls="--", label=f"Prop LSL (IQR)")
                     
+                    # Vẽ đường giới hạn theo IQR
+                    ax_i.axhline(iqr_usl, color="darkorange", ls="--", label=f"Prop USL (IQR)")
+                    ax_i.axhline(iqr_lsl, color="darkorange", ls="--", label=f"Prop LSL (IQR)")
+                    
+                    ax_i.set_xlabel("Coil Sequence")
+                    ax_i.set_ylabel(f"{selected_label} Value")
+                    ax_i.set_title(f"I-Chart: Optimization Comparison (N={n})")
                     ax_i.legend(loc="upper left", bbox_to_anchor=(1, 1))
                     apply_full_border(ax_i); plt.tight_layout(); st.pyplot(fig_imr)
+                    
+                    # Nút xuất ảnh I-MR ra Word
+                    buf_i = export_to_word([fig_imr], [f"I-Chart Optimization - {selected_label}"])
+                    st.download_button(
+                        label="📥 Download I-MR Chart (High-Res Word)",
+                        data=buf_i,
+                        file_name=f"IMR_Report_{selected_label}.docx",
+                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    )
 
-        # --- VIEW 3: EXECUTIVE SUMMARY ---
+        # VIEW 3: EXECUTIVE SUMMARY 
         elif view_mode == "Executive Summary":
             st.title("📑 Executive Quality Summary")
             summary_data = []
+            zh_sum_map = {"YS": "降伏強度", "TS": "抗拉強度", "EL": "伸長率", "Hardness": "硬度", "YPE": "YPE"}
+            
             for label in available:
                 short_key = metrics_map[label]; data_col = find_data_col(df, short_key)
+                zh_key = zh_sum_map.get(short_key, short_key)
                 if data_col:
                     p_data = pd.to_numeric(df[data_col], errors='coerce').dropna()
                     if len(p_data) == 0: continue
                     mu_v, sig_v = p_data.mean(), p_data.std(ddof=1)
-                    zh_sum_map = {"YS": "降伏強度", "TS": "抗拉強度", "EL": "伸長率", "HRB": "硬度", "YPE": "YPE"}
-                    zh_key = zh_sum_map.get(short_key, short_key)
                     i_lsl = get_limit(df, zh_key, "min", "管制")
                     i_usl = get_limit(df, zh_key, "max", "管制")
-                    summary_data.append({"Parameter": label, "N": len(p_data), "Mean": format_num(mu_v), "StdDev (σ)": format_num(sig_v), "Int LSL": format_num(i_lsl), "Int USL": format_num(i_usl)})
+                    
+                    cp, ca, cpk, formula, status = "-", "-", "-", "-", "N/A"
+                    cpk_val = None
+                    if sig_v > 0:
+                        if i_usl is not None and i_lsl is not None:
+                            cp_v = (i_usl - i_lsl) / (6 * sig_v)
+                            cnt, half = (i_usl + i_lsl) / 2, (i_usl - i_lsl) / 2
+                            ca_v = (mu_v - cnt) / half
+                            cpk_val = cp_v * (1 - abs(ca_v))
+                            cp, ca, cpk, formula = format_num(cp_v), f"{ca_v*100:.1f}%", format_num(cpk_val), "Cp*(1-|Ca|)"
+                        elif i_usl is not None:
+                            cpk_val = (i_usl - mu_v) / (3 * sig_v); cpk, formula = format_num(cpk_val), "Cpu"
+                        elif i_lsl is not None:
+                            cpk_val = (mu_v - i_lsl) / (3 * sig_v); cpk, formula = format_num(cpk_val), "Cpl"
+                            
+                        if cpk_val is not None:
+                            if cpk_val < 1.0: status = "🔴 Action Required"
+                            elif 1.0 <= cpk_val < 1.33: status = "🟡 Acceptable"
+                            elif 1.33 <= cpk_val <= 2.0: status = "🟢 Excellent"
+                            else: status = "🔵 Over-engineered (>2.0)"
+                    
+                    summary_data.append({"Parameter": label, "N": len(p_data), "Mean": format_num(mu_v), "StdDev (σ)": format_num(sig_v),
+                                       "Int LSL": format_num(i_lsl), "Int USL": format_num(i_usl), "Cp": cp, "Ca": ca, "Cpk": cpk, 
+                                       "Cpk Formula": formula, "Status": status})
+            
             st.dataframe(pd.DataFrame(summary_data), hide_index=True, use_container_width=True)
+            st.info("💡 **Tip:** Blue status (Over-engineered) suggests potential for cost optimization or process speed increase.")
 
     except Exception as e:
         st.error(f"System Error: {e}")
