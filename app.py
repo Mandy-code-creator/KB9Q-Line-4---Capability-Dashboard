@@ -83,13 +83,21 @@ def export_to_word(figures, titles):
 # ==========================================
 # 3. MAIN APP LOGIC
 # ==========================================
-st.sidebar.header("🏭 PRODUCTION LINE")
-line_choice = st.sidebar.radio("Select Line:", ["Dây chuyền mạ (Galvanizing)", "Dây chuyền sơn phủ (Coating)"])
-
 st.sidebar.header("📂 DATA SOURCE")
-uploaded_file = st.sidebar.file_uploader("Upload Excel/CSV Report", type=["xlsx", "csv", "xls"])
+# Bật tính năng upload nhiều file cùng lúc
+uploaded_files = st.sidebar.file_uploader("Upload Excel/CSV Reports", type=["xlsx", "csv", "xls"], accept_multiple_files=True)
 
-if uploaded_file:
+if uploaded_files:
+    # 1. Tạo Dropdown để người dùng chọn 1 file trong danh sách đã upload
+    selected_filename = st.sidebar.selectbox("📝 Select File to Analyze:", [f.name for f in uploaded_files])
+    
+    # 2. Lấy đối tượng file tương ứng với tên đã chọn
+    uploaded_file = next(f for f in uploaded_files if f.name == selected_filename)
+    
+    st.sidebar.markdown("---")
+    st.sidebar.header("🏭 PRODUCTION LINE SETTINGS")
+    line_choice = st.sidebar.radio("Select Line Type for this file:", ["Dây chuyền mạ (Galvanizing)", "Dây chuyền sơn phủ (Coating)"])
+
     try:
         df_raw = load_and_clean_data(uploaded_file)
         df = df_raw.copy()
@@ -105,7 +113,7 @@ if uploaded_file:
         available = [k for k, v in metrics_map.items() if find_data_col(df, v)]
         
         if not available: 
-            st.warning(f"⚠️ Không tìm thấy cột dữ liệu tương ứng cho {line_choice}. Vui lòng kiểm tra lại file Excel.")
+            st.warning(f"⚠️ Không tìm thấy cột dữ liệu tương ứng cho {line_choice} trong file '{selected_filename}'. Vui lòng kiểm tra lại file Excel.")
             st.stop()
 
         view_mode = st.sidebar.radio("View Mode:", ["Process Analytics", "SPC Control Charts (I-MR)", "Executive Summary"])
@@ -129,7 +137,6 @@ if uploaded_file:
                 orig_col = None
                 if line_choice == "Dây chuyền sơn phủ (Coating)":
                     for c in df.columns:
-                        # Chỉ cần cột chứa "降伏強度" VÀ chứa "原始" là lấy
                         if zh_key in c and "原始" in c:
                             orig_col = c
                             break
@@ -242,7 +249,7 @@ if uploaded_file:
                                 buf_c = export_to_word([fig_c], [f"Comparison Analysis - {selected_label}"])
                                 st.download_button(label="📥 Download Comparison Chart", data=buf_c, file_name=f"Compare_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
                             else:
-                                st.error(f"❌ Vẫn không quét được dữ liệu. Tên cột tìm được: {orig_col}. Vui lòng kiểm tra lại data thực tế.")
+                                st.info(f"💡 Không tìm thấy dữ liệu trước sơn phủ (原始) hợp lệ cho chỉ tiêu {selected_label} trong file excel.")
 
                 # VIEW 2: SPC OPTIMIZATION
                 elif view_mode == "SPC Control Charts (I-MR)":
@@ -290,6 +297,9 @@ if uploaded_file:
                     ax_i.set_title(f"I-Chart: Optimization Comparison (N={n})", pad=20)
                     ax_i.legend(loc="upper left", bbox_to_anchor=(1, 1))
                     apply_full_border(ax_i); plt.tight_layout(); st.pyplot(fig_imr)
+                    
+                    buf_i = export_to_word([fig_imr], [f"I-Chart Optimization - {selected_label}"])
+                    st.download_button(label="📥 Download I-MR Chart (High-Res Word)", data=buf_i, file_name=f"IMR_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
         elif view_mode == "Executive Summary":
             st.title("📑 Executive Quality Summary")
