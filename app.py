@@ -147,14 +147,14 @@ if uploaded_file:
                             ax_t.scatter(x_coords[mask_out], plot_data[mask_out], color="red", s=80, 
                                          edgecolor="black", zorder=2, label="Out of Int. Limit")
 
-                        # 3. Vẽ các đường giới hạn (Limit Lines)
+                        # 3. Vẽ các đường giới hạn (Limit Lines) - ĐÃ ĐỔI MÀU
                         ax_t.axhline(mu, color="blue", ls="-", lw=2, label=f"Mean: {mu:.1f}")
                         if cust_lsl: ax_t.axhline(cust_lsl, color="green", ls="-", lw=3, label="Cust LSL")
                         if cust_usl: ax_t.axhline(cust_usl, color="green", ls="-", lw=3, label="Cust USL")
                         if int_lsl: ax_t.axhline(int_lsl, color="red", ls="--", lw=3, label="Int LSL")
                         if int_usl: ax_t.axhline(int_usl, color="red", ls="--", lw=3, label="Int USL")
-                        ax_t.axhline(ucl_v1, color="#ff7f0e", ls=":", lw=3, label="3σ UCL")
-                        ax_t.axhline(lcl_v1, color="#ff7f0e", ls=":", lw=3, label="3σ LCL")
+                        ax_t.axhline(ucl_v1, color="#6A0DAD", ls=":", lw=3, label="3σ UCL") # Đổi sang Tím
+                        ax_t.axhline(lcl_v1, color="#6A0DAD", ls=":", lw=3, label="3σ LCL") # Đổi sang Tím
                         
                         # 4. Định dạng biểu đồ
                         ax_t.set_xlabel("Coil Sequence")
@@ -192,13 +192,14 @@ if uploaded_file:
                                 y_pos = 1.02 + (level * 0.05) 
                                 ax.text(val, y_pos, f"{val:.1f}", color=color, ha='center', va='bottom', transform=trans, fontweight='bold')
 
+                        # ĐÃ ĐỔI MÀU
                         add_vline_std(ax_d, mu, "blue", "-", "Mean", 0)
                         add_vline_std(ax_d, cust_lsl, "green", "-", "Cust LSL", 0)
                         add_vline_std(ax_d, cust_usl, "green", "-", "Cust USL", 0)
                         add_vline_std(ax_d, int_lsl, "red", "--", "Int LSL", 1)
                         add_vline_std(ax_d, int_usl, "red", "--", "Int USL", 1)
-                        add_vline_std(ax_d, ucl_v1, "#ff7f0e", ":", "3σ UCL", 2)
-                        add_vline_std(ax_d, lcl_v1, "#ff7f0e", ":", "3σ LCL", 2)
+                        add_vline_std(ax_d, ucl_v1, "#6A0DAD", ":", "3σ UCL", 2) # Đổi sang Tím
+                        add_vline_std(ax_d, lcl_v1, "#6A0DAD", ":", "3σ LCL", 2) # Đổi sang Tím
                         
                         ax_d.set_title(f"{selected_label} Distribution (N={n})", pad=55)
                         ax_d.legend(loc="upper left", bbox_to_anchor=(1, 1))
@@ -253,9 +254,9 @@ if uploaded_file:
                     ax_i.axhline(mu + k_std*sigma_fixed, color="darkred", ls="-", label=f"Prop USL ({k_std}σ)")
                     ax_i.axhline(mu - k_std*sigma_fixed, color="darkred", ls="-", label=f"Prop LSL ({k_std}σ)")
                     
-                    # Vẽ đường giới hạn theo IQR
-                    ax_i.axhline(iqr_usl, color="darkorange", ls="--", label=f"Prop USL (IQR)")
-                    ax_i.axhline(iqr_lsl, color="darkorange", ls="--", label=f"Prop LSL (IQR)")
+                    # Vẽ đường giới hạn theo IQR - ĐÃ ĐỔI MÀU
+                    ax_i.axhline(iqr_usl, color="brown", ls="--", label=f"Prop USL (IQR)") # Đổi sang Nâu
+                    ax_i.axhline(iqr_lsl, color="brown", ls="--", label=f"Prop LSL (IQR)") # Đổi sang Nâu
                     
                     ax_i.set_xlabel("Coil Sequence")
                     ax_i.set_ylabel(f"{selected_label} Value")
