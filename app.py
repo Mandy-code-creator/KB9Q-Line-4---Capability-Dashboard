@@ -5,6 +5,9 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 import re
 from scipy.stats import norm
+import io
+from docx import Document
+from docx.shared import Inches
 
 # ==========================================
 # 1. PAGE CONFIGURATION
@@ -18,7 +21,8 @@ plt.rcParams.update({
     'axes.titlesize': 15,
     'legend.fontsize': 10,
     'font.weight': 'bold',
-    'lines.linewidth': 2.5
+    'lines.linewidth': 2.5,
+    'figure.dpi': 150  # Tăng DPI hiển thị trên web cho sắc nét
 })
 
 # ==========================================
@@ -53,6 +57,30 @@ def format_num(val):
     if val is None or pd.isna(val): return "-"
     rounded = round(float(val), 2)
     return str(int(rounded)) if rounded == int(rounded) else str(rounded)
+
+def export_to_word(figures, titles):
+    """
+    Xuất danh sách biểu đồ plt.figure ra file Word với độ phân giải cao
+    """
+    doc = Document()
+    doc.add_heading('Quality Analytics Report', 0)
+
+    for fig, title in zip(figures, titles):
+        doc.add_heading(title, level=1)
+        
+        # Lưu ảnh vào bộ nhớ đệm với DPI cao (300) để không bị nhòe
+        img_stream = io.BytesIO()
+        fig.savefig(img_stream, format='png', dpi=300, bbox_inches='tight')
+        img_stream.seek(0)
+        
+        # Thêm vào word và chỉnh kích thước ảnh (rộng 5.5 inches)
+        doc.add_picture(img_stream, width=Inches(5.5))
+        doc.add_paragraph("-" * 50)
+    
+    out_io = io.BytesIO()
+    doc.save(out_io)
+    out_io.seek(0)
+    return out_io
 
 # ==========================================
 # 3. MAIN APP LOGIC
@@ -115,6 +143,15 @@ if uploaded_file:
                         ax_t.set_title(f"{selected_label} Trend Analysis (N={n})", pad=20)
                         ax_t.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), ncol=4, fontsize=9)
                         apply_full_border(ax_t); plt.tight_layout(); st.pyplot(fig_t)
+                        
+                        # Nút xuất ảnh Trend ra Word
+                        buf_t = export_to_word([fig_t], [f"Trend Analysis - {selected_label}"])
+                        st.download_button(
+                            label="📥 Download Trend Chart (High-Res Word)",
+                            data=buf_t,
+                            file_name=f"Trend_Report_{selected_label}.docx",
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        )
 
                     with tab_dist:
                         fig_d, ax_d = plt.subplots(figsize=(12, 6))
@@ -147,6 +184,15 @@ if uploaded_file:
                         ax_d.set_title(f"{selected_label} Distribution (N={n})", pad=55)
                         ax_d.legend(loc="upper left", bbox_to_anchor=(1, 1))
                         apply_full_border(ax_d); plt.tight_layout(); st.pyplot(fig_d)
+                        
+                        # Nút xuất ảnh Distribution ra Word
+                        buf_d = export_to_word([fig_d], [f"Distribution Analysis - {selected_label}"])
+                        st.download_button(
+                            label="📥 Download Distribution Chart (High-Res Word)",
+                            data=buf_d,
+                            file_name=f"Dist_Report_{selected_label}.docx",
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        )
 
                 # VIEW 2: SPC OPTIMIZATION
                 elif view_mode == "SPC Control Charts (I-MR)":
@@ -172,7 +218,6 @@ if uploaded_file:
                     ax_i.plot(plot_data, marker="o", color="#1f77b4", label="Actual Data", alpha=0.7)
                     ax_i.axhline(mu, color="blue", ls="-", lw=2, label="Mean")
                     
-                    # BỔ SUNG: Hiển thị giới hạn nội bộ hiện tại trong View 2
                     if int_lsl: ax_i.axhline(int_lsl, color="red", ls="--", lw=2, label="Current Int LSL")
                     if int_usl: ax_i.axhline(int_usl, color="red", ls="--", lw=2, label="Current Int USL")
                     
@@ -189,8 +234,17 @@ if uploaded_file:
                     ax_i.set_title(f"I-Chart: Optimization Comparison (N={n})")
                     ax_i.legend(loc="upper left", bbox_to_anchor=(1, 1))
                     apply_full_border(ax_i); plt.tight_layout(); st.pyplot(fig_imr)
+                    
+                    # Nút xuất ảnh I-MR ra Word
+                    buf_i = export_to_word([fig_imr], [f"I-Chart Optimization - {selected_label}"])
+                    st.download_button(
+                        label="📥 Download I-MR Chart (High-Res Word)",
+                        data=buf_i,
+                        file_name=f"IMR_Report_{selected_label}.docx",
+                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    )
 
-        # VIEW 3: EXECUTIVE SUMMARY (CẬP NHẬT ĐIỀU KIỆN MỚI CỦA MANDY)
+        # VIEW 3: EXECUTIVE SUMMARY 
         elif view_mode == "Executive Summary":
             st.title("📑 Executive Quality Summary")
             summary_data = []
@@ -221,7 +275,6 @@ if uploaded_file:
                             cpk_val = (mu_v - i_lsl) / (3 * sig_v); cpk, formula = format_num(cpk_val), "Cpl"
                             
                         if cpk_val is not None:
-                            # THÊM ĐIỀU KIỆN CỦA MANDY: Cảnh báo khi chất lượng quá dư thừa
                             if cpk_val < 1.0: status = "🔴 Action Required"
                             elif 1.0 <= cpk_val < 1.33: status = "🟡 Acceptable"
                             elif 1.33 <= cpk_val <= 2.0: status = "🟢 Excellent"
