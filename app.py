@@ -10,9 +10,13 @@ from docx import Document
 from docx.shared import Inches
 
 # ==========================================
-# 1. PAGE CONFIGURATION
+# 1. PAGE CONFIGURATION & FONTS
 # ==========================================
 st.set_page_config(page_title="Line 4 Quality Analytics", layout="wide")
+
+# Thiết lập font hỗ trợ tiếng Trung để không bị lỗi ô vuông (▯▯)
+plt.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei', 'Arial Unicode MS', 'sans-serif']
+plt.rcParams['axes.unicode_minus'] = False
 
 plt.rcParams.update({
     'font.size': 12,
@@ -36,7 +40,7 @@ def load_and_clean_data(file):
 
 def find_data_col(df, key):
     for col in df.columns:
-        # LOẠI TRỪ TỪ KHÓA "原始" ĐỂ KHÔNG LẤY NHẦM CỘT DỮ LIỆU TRƯỚC SƠN THÀNH CỘT CHÍNH
+        # Loại trừ "原始" để cột chính chỉ lấy dữ liệu Sau Sơn/Mạ
         if re.search(key, col, re.IGNORECASE) and not any(kw in col for kw in ["管制", "規格", "要求", "原始"]):
             return col
     return None
@@ -79,7 +83,6 @@ def export_to_word(figures, titles):
 # ==========================================
 # 3. MAIN APP LOGIC
 # ==========================================
-# --- TÙY CHỌN DÂY CHUYỀN ---
 st.sidebar.header("🏭 PRODUCTION LINE")
 line_choice = st.sidebar.radio("Select Line:", ["Dây chuyền mạ (Galvanizing)", "Dây chuyền sơn phủ (Coating)"])
 
@@ -110,7 +113,7 @@ if uploaded_file:
         if view_mode != "Executive Summary":
             selected_label = st.sidebar.selectbox("Select Parameter:", available)
             short_key = metrics_map[selected_label]
-            data_col = find_data_col(df, short_key) # Cột Sau Sơn/Mạ (Current)
+            data_col = find_data_col(df, short_key) 
             
             zh_key = zh_map_global.get(short_key, short_key)
             
@@ -121,23 +124,15 @@ if uploaded_file:
 
             if data_col:
                 # =================================================================
-                # TÌM CỘT TRƯỚC SƠN PHỦ DỰA TRÊN TÊN CHÍNH XÁC BẠN CUNG CẤP
+                # TÌM CỘT TRƯỚC SƠN PHỦ (QUÉT CHỨA TỪ KHÓA ĐỂ CHỐNG LỖI KHOẢNG TRẮNG)
                 # =================================================================
                 orig_col = None
                 if line_choice == "Dây chuyền sơn phủ (Coating)":
-                    orig_exact_map = {
-                        "YS": "降伏強度(原始)",
-                        "TS": "抗拉強度(原始)",
-                        "EL": "伸長率(原始)",
-                        "HRB": "硬度HRB(原始)"
-                    }
-                    target_orig = orig_exact_map.get(short_key)
-                    if target_orig:
-                        # So sánh loại bỏ khoảng trắng để tránh lỗi typo trong file Excel
-                        for c in df.columns:
-                            if c.replace(" ", "") == target_orig.replace(" ", ""):
-                                orig_col = c
-                                break
+                    for c in df.columns:
+                        # Chỉ cần cột chứa "降伏強度" VÀ chứa "原始" là lấy
+                        if zh_key in c and "原始" in c:
+                            orig_col = c
+                            break
                 
                 # Đồng bộ Index 2 cột
                 if orig_col:
@@ -145,6 +140,7 @@ if uploaded_file:
                     temp_df[orig_col] = pd.to_numeric(temp_df[orig_col], errors='coerce')
                     temp_df[data_col] = pd.to_numeric(temp_df[data_col], errors='coerce')
                     temp_df = temp_df.dropna(subset=[data_col])
+                    
                     plot_data = temp_df[data_col].reset_index(drop=True)
                     plot_data_orig = temp_df[orig_col].reset_index(drop=True)
                 else:
@@ -191,7 +187,7 @@ if uploaded_file:
                         apply_full_border(ax_t); plt.tight_layout(); st.pyplot(fig_t)
                         
                         buf_t = export_to_word([fig_t], [f"Trend Analysis - {selected_label}"])
-                        st.download_button(label="📥 Download Trend Chart (High-Res Word)", data=buf_t, file_name=f"Trend_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+                        st.download_button(label="📥 Download Trend Chart", data=buf_t, file_name=f"Trend_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
                     with tab_dist:
                         fig_d, ax_d = plt.subplots(figsize=(12, 6))
@@ -224,11 +220,7 @@ if uploaded_file:
                         ax_d.set_title(f"{selected_label} Distribution (N={n})", pad=55)
                         ax_d.legend(loc="upper left", bbox_to_anchor=(1, 1))
                         apply_full_border(ax_d); plt.tight_layout(); st.pyplot(fig_d)
-                        
-                        buf_d = export_to_word([fig_d], [f"Distribution Analysis - {selected_label}"])
-                        st.download_button(label="📥 Download Distribution Chart (High-Res Word)", data=buf_d, file_name=f"Dist_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
-                    # TAB SO SÁNH (DÂY CHUYỀN SƠN PHỦ)
                     if line_choice == "Dây chuyền sơn phủ (Coating)":
                         with tab_compare:
                             if plot_data_orig is not None and not plot_data_orig.isna().all():
@@ -248,9 +240,9 @@ if uploaded_file:
                                 apply_full_border(ax_c); plt.tight_layout(); st.pyplot(fig_c)
                                 
                                 buf_c = export_to_word([fig_c], [f"Comparison Analysis - {selected_label}"])
-                                st.download_button(label="📥 Download Comparison Chart (High-Res Word)", data=buf_c, file_name=f"Compare_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+                                st.download_button(label="📥 Download Comparison Chart", data=buf_c, file_name=f"Compare_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
                             else:
-                                st.info(f"💡 Không tìm thấy dữ liệu trước sơn phủ (原始) hợp lệ cho chỉ tiêu {selected_label} trong file excel.")
+                                st.error(f"❌ Vẫn không quét được dữ liệu. Tên cột tìm được: {orig_col}. Vui lòng kiểm tra lại data thực tế.")
 
                 # VIEW 2: SPC OPTIMIZATION
                 elif view_mode == "SPC Control Charts (I-MR)":
@@ -298,11 +290,7 @@ if uploaded_file:
                     ax_i.set_title(f"I-Chart: Optimization Comparison (N={n})", pad=20)
                     ax_i.legend(loc="upper left", bbox_to_anchor=(1, 1))
                     apply_full_border(ax_i); plt.tight_layout(); st.pyplot(fig_imr)
-                    
-                    buf_i = export_to_word([fig_imr], [f"I-Chart Optimization - {selected_label}"])
-                    st.download_button(label="📥 Download I-MR Chart (High-Res Word)", data=buf_i, file_name=f"IMR_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
-        # VIEW 3: EXECUTIVE SUMMARY 
         elif view_mode == "Executive Summary":
             st.title("📑 Executive Quality Summary")
             summary_data = []
@@ -344,7 +332,6 @@ if uploaded_file:
                                        "Cpk Formula": formula, "Status": status})
             
             st.dataframe(pd.DataFrame(summary_data), hide_index=True, use_container_width=True)
-            st.info("💡 **Tip:** Blue status (Over-engineered) suggests potential for cost optimization or process speed increase.")
 
     except Exception as e:
         st.error(f"System Error: {e}")
