@@ -35,12 +35,12 @@ plt.rcParams.update({
 @st.cache_data
 def load_and_clean_data(file):
     df = pd.read_csv(file) if file.name.endswith('.csv') else pd.read_excel(file)
-    df.columns = [re.sub(r'\s+', ' ', str(c)).strip() for c in df.columns]
+    # Giữ nguyên khoảng trắng giữa các từ để mapping chính xác
+    df.columns = [str(c).strip() for c in df.columns]
     return df
 
 def find_data_col(df, key):
     for col in df.columns:
-        # Loại trừ "原始" để cột chính chỉ lấy dữ liệu Sau Sơn/Mạ
         if re.search(key, col, re.IGNORECASE) and not any(kw in col for kw in ["管制", "規格", "要求", "原始"]):
             return col
     return None
@@ -128,23 +128,23 @@ if uploaded_files:
 
             if data_col:
                 # =================================================================
-                # TÌM CỘT TRƯỚC SƠN PHỦ - THUẬT TOÁN QUÉT CHUẨN XÁC CHỐNG LỖI KHOẢNG TRẮNG
+                # TÌM CỘT TRƯỚC SƠN PHỦ - MAPPING CHÍNH XÁC 100% TỪ ẢNH CHỤP
                 # =================================================================
                 orig_col = None
                 if line_choice == "Dây chuyền sơn phủ (Coating)":
-                    search_map = {
-                        "YS": ["降伏強度", "原始"],
-                        "TS": ["抗拉強度", "原始"],
-                        "EL": ["伸長率", "原始"],
-                        "HRB": ["硬度", "HRB", "原始"]
+                    orig_exact_map = {
+                        "YS": "降伏強度 原始",
+                        "TS": "抗拉強度 原始",
+                        "EL": "伸長率 原始",
+                        "HRB": "硬度 HRB 原始"
                     }
-                    keys_to_find = search_map.get(short_key, [])
-                    for c in df.columns:
-                        # Chuẩn hóa tuyệt đối: Xóa khoảng trắng, Tab, Xuống dòng và ép ngoặc về chuẩn
-                        c_norm = str(c).replace(" ", "").replace("\n", "").replace("\r", "").replace("\t", "").replace("（", "(").replace("）", ")")
-                        if keys_to_find and all(k in c_norm for k in keys_to_find):
-                            orig_col = c
-                            break
+                    target_orig = orig_exact_map.get(short_key)
+                    if target_orig:
+                        for c in df.columns:
+                            # Khớp chính xác tên cột hoặc bỏ qua các lỗi dấu cách thừa
+                            if target_orig in c or target_orig.replace(" ", "") in str(c).replace(" ", ""):
+                                orig_col = c
+                                break
                 
                 # =================================================================
                 # LỌC DỮ LIỆU & TÍNH TOÁN GIÁ TRỊ TRÊN LÝ THUYẾT (A-B GRADE)
@@ -162,12 +162,15 @@ if uploaded_files:
                 n = len(plot_data)
                 data_max, data_min = plot_data.max(), plot_data.min()
 
-                # Tính Sigma và Mean giới hạn trong cuộn chất lượng A-B
+                # Tính Sigma và Giá trị lý thuyết giới hạn trong cuộn chất lượng A-B
                 df_calc = plot_df.copy()
                 grade_col = next((c for c in df.columns if any(kw in str(c).lower() for kw in ['grade', '等级', '等級', 'cấp', 'quality', 'loại'])), None)
                 if grade_col:
                     df_calc = df_calc[df_calc[grade_col].astype(str).str.upper().str.contains(r'A|B', regex=True, na=False)]
-                    if df_calc.empty: df_calc = plot_df.copy() # Fallback nếu lọc bị rỗng
+                
+                # Nếu không có cột Grade hoặc lọc xong bị rỗng, dùng toàn bộ data
+                if grade_col is None or df_calc.empty:
+                    df_calc = plot_df.copy()
                 
                 calc_data = df_calc[data_col].dropna()
                 mu = calc_data.mean()
@@ -197,7 +200,7 @@ if uploaded_files:
                         if mask_out.any():
                             ax_t.scatter(x_coords[mask_out], plot_data[mask_out], color="red", s=80, edgecolor="black", zorder=2, label="Out of Int. Limit")
 
-                        ax_t.axhline(mu, color="blue", ls="-", lw=2, label=f"Mean: {mu:.1f}")
+                        ax_t.axhline(mu, color="blue", ls="-", lw=2, label=f"Theoretical Value: {mu:.1f}")
                         if cust_lsl: ax_t.axhline(cust_lsl, color="green", ls="-", lw=3, label="Cust LSL")
                         if cust_usl: ax_t.axhline(cust_usl, color="green", ls="-", lw=3, label="Cust USL")
                         if int_lsl: ax_t.axhline(int_lsl, color="red", ls="--", lw=3, label="Int LSL")
@@ -234,7 +237,7 @@ if uploaded_files:
                                 y_pos = 1.02 + (level * 0.05) 
                                 ax.text(val, y_pos, f"{val:.1f}", color=color, ha='center', va='bottom', transform=trans, fontweight='bold')
 
-                        add_vline_std(ax_d, mu, "blue", "-", "Mean", 0)
+                        add_vline_std(ax_d, mu, "blue", "-", "Theoretical Value", 0)
                         add_vline_std(ax_d, cust_lsl, "green", "-", "Cust LSL", 0)
                         add_vline_std(ax_d, cust_usl, "green", "-", "Cust USL", 0)
                         add_vline_std(ax_d, int_lsl, "red", "--", "Int LSL", 1)
@@ -287,7 +290,7 @@ if uploaded_files:
                     with col_r1:
                         st.write("**Method: Standard Deviation**")
                         st.table(pd.DataFrame({
-                            "Metric": ["N", "Max", "Min", "Theoretical Mean", "Sigma", "LSL", "USL"],
+                            "Metric": ["N", "Max", "Min", "Theoretical Value", "Sigma", "LSL", "USL"],
                             "Value": [str(n), format_num(data_max), format_num(data_min), format_num(mu), format_num(sigma_fixed), format_num(mu - k_std*sigma_fixed), format_num(mu + k_std*sigma_fixed)]
                         }))
                     with col_r2:
@@ -299,7 +302,7 @@ if uploaded_files:
 
                     fig_imr, ax_i = plt.subplots(figsize=(12, 6))
                     ax_i.plot(plot_data, marker="o", color="#1f77b4", label="Actual Data", alpha=0.7)
-                    ax_i.axhline(mu, color="blue", ls="-", lw=2, label="Theoretical Mean")
+                    ax_i.axhline(mu, color="blue", ls="-", lw=2, label="Theoretical Value")
                     
                     if int_lsl: ax_i.axhline(int_lsl, color="red", ls="--", lw=2, label="Current Int LSL")
                     if int_usl: ax_i.axhline(int_usl, color="red", ls="--", lw=2, label="Current Int USL")
