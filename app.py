@@ -89,14 +89,20 @@ uploaded_files = st.sidebar.file_uploader("Upload Excel/CSV Reports", type=["xls
 if uploaded_files:
     selected_filename = st.sidebar.selectbox("📝 Select File to Analyze:", [f.name for f in uploaded_files])
     uploaded_file = next(f for f in uploaded_files if f.name == selected_filename)
-    
-    st.sidebar.markdown("---")
-    st.sidebar.header("🏭 PRODUCTION LINE SETTINGS")
-    line_choice = st.sidebar.radio("Select Line Type for this file:", ["Dây chuyền mạ (Galvanizing)", "Dây chuyền sơn phủ (Coating)"])
 
     try:
         df_raw = load_and_clean_data(uploaded_file)
         df = df_raw.copy()
+        
+        # =================================================================
+        # TỰ ĐỘNG NHẬN DIỆN DÂY CHUYỀN THÔNG QUA TÊN CỘT
+        # =================================================================
+        is_coating_line = any("原始" in str(c) for c in df.columns)
+        line_choice = "Dây chuyền sơn phủ (Coating)" if is_coating_line else "Dây chuyền mạ (Galvanizing)"
+        
+        st.sidebar.markdown("---")
+        st.sidebar.info(f"🏭 Tự động nhận diện:\n**{line_choice}**")
+        st.sidebar.markdown("---")
         
         if "用途碼" in df_raw.columns:
             usage_list = sorted(df_raw["用途碼"].dropna().unique().tolist())
@@ -109,7 +115,7 @@ if uploaded_files:
         available = [k for k, v in metrics_map.items() if find_data_col(df, v)]
         
         if not available: 
-            st.warning(f"⚠️ Không tìm thấy cột dữ liệu tương ứng cho {line_choice} trong file '{selected_filename}'. Vui lòng kiểm tra lại.")
+            st.warning(f"⚠️ Không tìm thấy cột dữ liệu cơ tính trong file '{selected_filename}'. Vui lòng kiểm tra lại.")
             st.stop()
 
         view_mode = st.sidebar.radio("View Mode:", ["Process Analytics", "SPC Control Charts (I-MR)", "Executive Summary"])
@@ -127,9 +133,6 @@ if uploaded_files:
             cust_usl = get_limit(df, zh_key, "max", "客戶要求")
 
             if data_col:
-                # =================================================================
-                # TÌM CỘT TRƯỚC SƠN PHỦ - MAPPING CHÍNH XÁC 100% TỪ ẢNH CHỤP
-                # =================================================================
                 orig_col = None
                 if line_choice == "Dây chuyền sơn phủ (Coating)":
                     orig_exact_map = {
@@ -141,34 +144,27 @@ if uploaded_files:
                     target_orig = orig_exact_map.get(short_key)
                     if target_orig:
                         for c in df.columns:
-                            # Khớp chính xác tên cột hoặc bỏ qua các lỗi dấu cách thừa
                             if target_orig in c or target_orig.replace(" ", "") in str(c).replace(" ", ""):
                                 orig_col = c
                                 break
                 
-                # =================================================================
-                # LỌC DỮ LIỆU & TÍNH TOÁN GIÁ TRỊ TRÊN LÝ THUYẾT (A-B GRADE)
-                # =================================================================
                 temp_df = df.copy()
                 
                 if orig_col:
                     temp_df[orig_col] = pd.to_numeric(temp_df[orig_col], errors='coerce')
                 temp_df[data_col] = pd.to_numeric(temp_df[data_col], errors='coerce')
                 
-                # Biểu đồ hiển thị toàn bộ sequence
                 plot_df = temp_df.dropna(subset=[data_col]).reset_index(drop=True)
                 plot_data = plot_df[data_col]
                 plot_data_orig = plot_df[orig_col] if orig_col else None
                 n = len(plot_data)
                 data_max, data_min = plot_data.max(), plot_data.min()
 
-                # Tính Sigma và Giá trị lý thuyết giới hạn trong cuộn chất lượng A-B
                 df_calc = plot_df.copy()
                 grade_col = next((c for c in df.columns if any(kw in str(c).lower() for kw in ['grade', '等级', '等級', 'cấp', 'quality', 'loại'])), None)
                 if grade_col:
                     df_calc = df_calc[df_calc[grade_col].astype(str).str.upper().str.contains(r'A|B', regex=True, na=False)]
                 
-                # Nếu không có cột Grade hoặc lọc xong bị rỗng, dùng toàn bộ data
                 if grade_col is None or df_calc.empty:
                     df_calc = plot_df.copy()
                 
@@ -176,9 +172,6 @@ if uploaded_files:
                 mu = calc_data.mean()
                 sigma_fixed = calc_data.std(ddof=1)
 
-                # =================================================================
-                # RENDER GIAO DIỆN
-                # =================================================================
                 st.title(f"📊 Quality Analytics: {selected_label} - {line_choice}")
 
                 if view_mode == "Process Analytics":
@@ -254,7 +247,7 @@ if uploaded_files:
                             if orig_col is None:
                                 st.error(f"❌ Không tìm thấy cột chứa dữ liệu (原始) cho {selected_label}.")
                                 st.info(f"👉 Danh sách cột hiện có: {', '.join(df.columns.tolist()[:20])}...")
-                            elif plot_data_orig.isna().all():
+                            elif plot_data_orig is not None and plot_data_orig.isna().all():
                                 st.warning(f"⚠️ Đã tìm thấy cột '{orig_col}' nhưng toàn bộ dữ liệu bên trong bị rỗng.")
                             else:
                                 fig_c, ax_c = plt.subplots(figsize=(12, 6))
@@ -333,7 +326,8 @@ if uploaded_files:
                 if data_col:
                     p_data = pd.to_numeric(df[data_col], errors='coerce').dropna()
                     if len(p_data) == 0: continue
-                    mu_v, sig_v = p_data.mean(), p_data.std(ddof=1)
+                    mu_v, p_data.mean()
+                    sig_v = p_data.std(ddof=1)
                     i_lsl = get_limit(df, zh_key, "min", "管制")
                     i_usl = get_limit(df, zh_key, "max", "管制")
                     
