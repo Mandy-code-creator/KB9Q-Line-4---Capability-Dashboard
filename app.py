@@ -36,7 +36,7 @@ def load_and_clean_data(file):
 
 def find_data_col(df, key):
     for col in df.columns:
-        # Cập nhật: LOẠI TRỪ TỪ KHÓA "原始" ĐỂ KHÔNG LẤY NHẦM CỘT DỮ LIỆU TRƯỚC SƠN THÀNH CỘT CHÍNH
+        # LOẠI TRỪ TỪ KHÓA "原始" ĐỂ KHÔNG LẤY NHẦM CỘT DỮ LIỆU TRƯỚC SƠN THÀNH CỘT CHÍNH
         if re.search(key, col, re.IGNORECASE) and not any(kw in col for kw in ["管制", "規格", "要求", "原始"]):
             return col
     return None
@@ -96,13 +96,8 @@ if uploaded_file:
             selected_usages = st.sidebar.multiselect("Filter Usage Code:", options=usage_list, default=usage_list)
             df = df_raw[df_raw["用途碼"].isin(selected_usages)]
 
-        # Các chỉ số cơ tính
         metrics_map = {"YS": "YS", "TS": "TS", "EL": "EL", "Hardness": "HRB", "YPE": "YPE"}
-        
-        if line_choice == "Dây chuyền mạ (Galvanizing)":
-            zh_map_global = {"YS": "降伏強度", "TS": "抗拉強度", "EL": "伸長率", "HRB": "硬度", "YPE": "YPE"}
-        else:
-            zh_map_global = {"YS": "降伏強度", "TS": "抗拉強度", "EL": "伸長率", "HRB": "硬度", "YPE": "YPE"}
+        zh_map_global = {"YS": "降伏強度", "TS": "抗拉強度", "EL": "伸長率", "HRB": "硬度", "YPE": "YPE"}
 
         available = [k for k, v in metrics_map.items() if find_data_col(df, v)]
         
@@ -126,18 +121,25 @@ if uploaded_file:
 
             if data_col:
                 # =================================================================
-                # LẤY THÊM DỮ LIỆU CỦA CỘT TRƯỚC SƠN PHỦ (NẾU LÀ DÂY CHUYỀN SƠN)
+                # TÌM CỘT TRƯỚC SƠN PHỦ DỰA TRÊN TÊN CHÍNH XÁC BẠN CUNG CẤP
                 # =================================================================
                 orig_col = None
                 if line_choice == "Dây chuyền sơn phủ (Coating)":
-                    orig_zh_map = {"YS": "降伏強度", "TS": "抗拉強度", "EL": "伸長率", "HRB": "硬度", "YPE": "YPE"}
-                    orig_key = orig_zh_map.get(short_key, "")
-                    for c in df.columns:
-                        if orig_key in c and "原始" in c:
-                            orig_col = c
-                            break
+                    orig_exact_map = {
+                        "YS": "降伏強度(原始)",
+                        "TS": "抗拉強度(原始)",
+                        "EL": "伸長率(原始)",
+                        "HRB": "硬度HRB(原始)"
+                    }
+                    target_orig = orig_exact_map.get(short_key)
+                    if target_orig:
+                        # So sánh loại bỏ khoảng trắng để tránh lỗi typo trong file Excel
+                        for c in df.columns:
+                            if c.replace(" ", "") == target_orig.replace(" ", ""):
+                                orig_col = c
+                                break
                 
-                # Đồng bộ Index 2 cột (Chỉ lấy các hàng mà cột 'Sau sơn' có dữ liệu)
+                # Đồng bộ Index 2 cột
                 if orig_col:
                     temp_df = df[[orig_col, data_col]].copy()
                     temp_df[orig_col] = pd.to_numeric(temp_df[orig_col], errors='coerce')
@@ -156,7 +158,6 @@ if uploaded_file:
 
                 # VIEW 1: PROCESS ANALYTICS
                 if view_mode == "Process Analytics":
-                    # TẠO TABS CONDITIONAL DỰA TRÊN DÂY CHUYỀN
                     if line_choice == "Dây chuyền sơn phủ (Coating)":
                         tab_trend, tab_dist, tab_compare = st.tabs(["📈 Trend Analysis", "📊 Distribution & SPC", "🔄 Before vs After"])
                     else:
@@ -167,16 +168,13 @@ if uploaded_file:
                     with tab_trend:
                         fig_t, ax_t = plt.subplots(figsize=(12, 6))
                         x_coords = np.arange(1, n+1)
-                        
                         ax_t.plot(x_coords, plot_data, marker="o", markersize=6, color="#1f77b4", label="Actual Value", zorder=1)
                         
                         mask_out = pd.Series([False] * len(plot_data))
                         if int_usl is not None: mask_out = mask_out | (plot_data > int_usl)
                         if int_lsl is not None: mask_out = mask_out | (plot_data < int_lsl)
-                            
                         if mask_out.any():
-                            ax_t.scatter(x_coords[mask_out], plot_data[mask_out], color="red", s=80, 
-                                         edgecolor="black", zorder=2, label="Out of Int. Limit")
+                            ax_t.scatter(x_coords[mask_out], plot_data[mask_out], color="red", s=80, edgecolor="black", zorder=2, label="Out of Int. Limit")
 
                         ax_t.axhline(mu, color="blue", ls="-", lw=2, label=f"Mean: {mu:.1f}")
                         if cust_lsl: ax_t.axhline(cust_lsl, color="green", ls="-", lw=3, label="Cust LSL")
@@ -230,17 +228,14 @@ if uploaded_file:
                         buf_d = export_to_word([fig_d], [f"Distribution Analysis - {selected_label}"])
                         st.download_button(label="📥 Download Distribution Chart (High-Res Word)", data=buf_d, file_name=f"Dist_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
-                    # TAB SO SÁNH (CHỈ DÀNH CHO DÂY CHUYỀN SƠN PHỦ)
+                    # TAB SO SÁNH (DÂY CHUYỀN SƠN PHỦ)
                     if line_choice == "Dây chuyền sơn phủ (Coating)":
                         with tab_compare:
                             if plot_data_orig is not None and not plot_data_orig.isna().all():
                                 fig_c, ax_c = plt.subplots(figsize=(12, 6))
                                 x_coords = np.arange(1, n+1)
                                 
-                                # Vẽ đường Trước Sơn (Màu xám/Nét đứt)
                                 ax_c.plot(x_coords, plot_data_orig, marker="s", markersize=5, color="#808080", ls="--", label="Before Coating (原始)", alpha=0.7)
-                                
-                                # Vẽ đường Sau Sơn (Màu xanh/Nét liền)
                                 ax_c.plot(x_coords, plot_data, marker="o", markersize=6, color="#1f77b4", label="After Coating", zorder=3)
                                 
                                 if int_lsl: ax_c.axhline(int_lsl, color="red", ls="--", lw=2, label="Int LSL")
