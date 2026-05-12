@@ -218,20 +218,27 @@ if uploaded_file:
                     st.subheader("II. Control Limit Optimization & I-MR")
                     c_i1, c_i2 = st.columns(2)
                     with c_i1: k_std = st.number_input("Target Multiplier for StdDev (Sigma):", 1.0, 6.0, 3.0, 0.1)
-                    with c_i2: k_iqr = st.number_input("Target Multiplier for IQR (k-factor):", 1.0, 6.0, 3.0, 0.1)
+                    with c_i2: k_iqr = st.number_input("Target Multiplier for IQR (k-factor):", 1.0, 6.0, 1.5, 0.1)
                     
+                    # Tính toán IQR chuẩn xác
                     q1, q3 = plot_data.quantile(0.25), plot_data.quantile(0.75)
-                    s_iqr = (q3 - q1) / 1.349
+                    iqr_val = q3 - q1
+                    iqr_lsl = q1 - (k_iqr * iqr_val)
+                    iqr_usl = q3 + (k_iqr * iqr_val)
 
                     col_r1, col_r2 = st.columns(2)
                     with col_r1:
                         st.write("**Method: Standard Deviation**")
-                        st.table(pd.DataFrame({"Metric": ["N","Max","Min","Mean","Sigma","LSL","USL"],
-                                             "Value": [str(n), format_num(data_max), format_num(data_min), format_num(mu), format_num(sigma_fixed), format_num(mu-k_std*sigma_fixed), format_num(mu+k_std*sigma_fixed)]}))
+                        st.table(pd.DataFrame({
+                            "Metric": ["N", "Max", "Min", "Mean", "Sigma", "LSL", "USL"],
+                            "Value": [str(n), format_num(data_max), format_num(data_min), format_num(mu), format_num(sigma_fixed), format_num(mu - k_std*sigma_fixed), format_num(mu + k_std*sigma_fixed)]
+                        }))
                     with col_r2:
-                        st.write("**Method: IQR (Robust)**")
-                        st.table(pd.DataFrame({"Metric": ["N","Max","Min","Mean","Sigma_iqr","LSL","USL"],
-                                             "Value": [str(n), format_num(data_max), format_num(data_min), format_num(mu), format_num(s_iqr), format_num(mu-k_iqr*s_iqr), format_num(mu+k_iqr*s_iqr)]}))
+                        st.write("**Method: IQR (Strict Standard)**")
+                        st.table(pd.DataFrame({
+                            "Metric": ["N", "Q1 (25th)", "Q3 (75th)", "IQR", "k-factor", "LSL (Q1 - k*IQR)", "USL (Q3 + k*IQR)"],
+                            "Value": [str(n), format_num(q1), format_num(q3), format_num(iqr_val), str(k_iqr), format_num(iqr_lsl), format_num(iqr_usl)]
+                        }))
 
                     fig_imr, ax_i = plt.subplots(figsize=(12, 6))
                     ax_i.plot(plot_data, marker="o", color="#1f77b4", label="Actual Data", alpha=0.7)
@@ -245,8 +252,10 @@ if uploaded_file:
                     
                     ax_i.axhline(mu + k_std*sigma_fixed, color="darkred", ls="-", label=f"Prop USL ({k_std}σ)")
                     ax_i.axhline(mu - k_std*sigma_fixed, color="darkred", ls="-", label=f"Prop LSL ({k_std}σ)")
-                    ax_i.axhline(mu + k_iqr*s_iqr, color="darkorange", ls="--", label=f"Prop USL (IQR {k_iqr}k)")
-                    ax_i.axhline(mu - k_iqr*s_iqr, color="darkorange", ls="--", label=f"Prop LSL (IQR {k_iqr}k)")
+                    
+                    # Vẽ đường giới hạn theo IQR
+                    ax_i.axhline(iqr_usl, color="darkorange", ls="--", label=f"Prop USL (IQR)")
+                    ax_i.axhline(iqr_lsl, color="darkorange", ls="--", label=f"Prop LSL (IQR)")
                     
                     ax_i.set_xlabel("Coil Sequence")
                     ax_i.set_ylabel(f"{selected_label} Value")
