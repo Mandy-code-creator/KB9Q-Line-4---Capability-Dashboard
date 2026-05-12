@@ -22,7 +22,7 @@ plt.rcParams.update({
     'legend.fontsize': 10,
     'font.weight': 'bold',
     'lines.linewidth': 2.5,
-    'figure.dpi': 150  # Tăng DPI hiển thị trên web cho sắc nét
+    'figure.dpi': 150  
 })
 
 # ==========================================
@@ -36,7 +36,8 @@ def load_and_clean_data(file):
 
 def find_data_col(df, key):
     for col in df.columns:
-        if re.search(key, col, re.IGNORECASE) and not any(kw in col for kw in ["管制", "規格", "要求"]):
+        # Cập nhật: LOẠI TRỪ TỪ KHÓA "原始" ĐỂ KHÔNG LẤY NHẦM CỘT DỮ LIỆU TRƯỚC SƠN THÀNH CỘT CHÍNH
+        if re.search(key, col, re.IGNORECASE) and not any(kw in col for kw in ["管制", "規格", "要求", "原始"]):
             return col
     return None
 
@@ -59,21 +60,14 @@ def format_num(val):
     return str(int(rounded)) if rounded == int(rounded) else str(rounded)
 
 def export_to_word(figures, titles):
-    """
-    Xuất danh sách biểu đồ plt.figure ra file Word với độ phân giải cao
-    """
     doc = Document()
     doc.add_heading('Quality Analytics Report', 0)
 
     for fig, title in zip(figures, titles):
         doc.add_heading(title, level=1)
-        
-        # Lưu ảnh vào bộ nhớ đệm với DPI cao (300) để không bị nhòe
         img_stream = io.BytesIO()
         fig.savefig(img_stream, format='png', dpi=300, bbox_inches='tight')
         img_stream.seek(0)
-        
-        # Thêm vào word và chỉnh kích thước ảnh (rộng 5.5 inches)
         doc.add_picture(img_stream, width=Inches(5.5))
         doc.add_paragraph("-" * 50)
     
@@ -85,6 +79,10 @@ def export_to_word(figures, titles):
 # ==========================================
 # 3. MAIN APP LOGIC
 # ==========================================
+# --- TÙY CHỌN DÂY CHUYỀN ---
+st.sidebar.header("🏭 PRODUCTION LINE")
+line_choice = st.sidebar.radio("Select Line:", ["Dây chuyền mạ (Galvanizing)", "Dây chuyền sơn phủ (Coating)"])
+
 st.sidebar.header("📂 DATA SOURCE")
 uploaded_file = st.sidebar.file_uploader("Upload Excel/CSV Report", type=["xlsx", "csv", "xls"])
 
@@ -98,18 +96,28 @@ if uploaded_file:
             selected_usages = st.sidebar.multiselect("Filter Usage Code:", options=usage_list, default=usage_list)
             df = df_raw[df_raw["用途碼"].isin(selected_usages)]
 
+        # Các chỉ số cơ tính
         metrics_map = {"YS": "YS", "TS": "TS", "EL": "EL", "Hardness": "HRB", "YPE": "YPE"}
+        
+        if line_choice == "Dây chuyền mạ (Galvanizing)":
+            zh_map_global = {"YS": "降伏強度", "TS": "抗拉強度", "EL": "伸長率", "HRB": "硬度", "YPE": "YPE"}
+        else:
+            zh_map_global = {"YS": "降伏強度", "TS": "抗拉強度", "EL": "伸長率", "HRB": "硬度", "YPE": "YPE"}
+
         available = [k for k, v in metrics_map.items() if find_data_col(df, v)]
-        if not available: st.stop()
+        
+        if not available: 
+            st.warning(f"⚠️ Không tìm thấy cột dữ liệu tương ứng cho {line_choice}. Vui lòng kiểm tra lại file Excel.")
+            st.stop()
 
         view_mode = st.sidebar.radio("View Mode:", ["Process Analytics", "SPC Control Charts (I-MR)", "Executive Summary"])
         
         if view_mode != "Executive Summary":
             selected_label = st.sidebar.selectbox("Select Parameter:", available)
             short_key = metrics_map[selected_label]
-            data_col = find_data_col(df, short_key)
-            zh_map = {"YS": "降伏強度", "TS": "抗拉強度", "EL": "伸長率", "HRB": "硬度", "YPE": "YPE"}
-            zh_key = zh_map.get(short_key, short_key)
+            data_col = find_data_col(df, short_key) # Cột Sau Sơn/Mạ (Current)
+            
+            zh_key = zh_map_global.get(short_key, short_key)
             
             int_lsl = get_limit(df, zh_key, "min", "管制")
             int_usl = get_limit(df, zh_key, "max", "管制")
@@ -117,60 +125,75 @@ if uploaded_file:
             cust_usl = get_limit(df, zh_key, "max", "客戶要求")
 
             if data_col:
-                plot_data = pd.to_numeric(df[data_col], errors='coerce').dropna().reset_index(drop=True)
+                # =================================================================
+                # LẤY THÊM DỮ LIỆU CỦA CỘT TRƯỚC SƠN PHỦ (NẾU LÀ DÂY CHUYỀN SƠN)
+                # =================================================================
+                orig_col = None
+                if line_choice == "Dây chuyền sơn phủ (Coating)":
+                    orig_zh_map = {"YS": "降伏強度", "TS": "抗拉強度", "EL": "伸長率", "HRB": "硬度", "YPE": "YPE"}
+                    orig_key = orig_zh_map.get(short_key, "")
+                    for c in df.columns:
+                        if orig_key in c and "原始" in c:
+                            orig_col = c
+                            break
+                
+                # Đồng bộ Index 2 cột (Chỉ lấy các hàng mà cột 'Sau sơn' có dữ liệu)
+                if orig_col:
+                    temp_df = df[[orig_col, data_col]].copy()
+                    temp_df[orig_col] = pd.to_numeric(temp_df[orig_col], errors='coerce')
+                    temp_df[data_col] = pd.to_numeric(temp_df[data_col], errors='coerce')
+                    temp_df = temp_df.dropna(subset=[data_col])
+                    plot_data = temp_df[data_col].reset_index(drop=True)
+                    plot_data_orig = temp_df[orig_col].reset_index(drop=True)
+                else:
+                    plot_data = pd.to_numeric(df[data_col], errors='coerce').dropna().reset_index(drop=True)
+                    plot_data_orig = None
+
                 n, mu, sigma_fixed = len(plot_data), plot_data.mean(), plot_data.std(ddof=1)
                 data_max, data_min = plot_data.max(), plot_data.min()
 
-                st.title(f"📊 Quality Analytics: {selected_label}")
+                st.title(f"📊 Quality Analytics: {selected_label} - {line_choice}")
 
                 # VIEW 1: PROCESS ANALYTICS
                 if view_mode == "Process Analytics":
-                    tab_trend, tab_dist = st.tabs(["📈 Trend Analysis", "📊 Distribution & SPC"])
+                    # TẠO TABS CONDITIONAL DỰA TRÊN DÂY CHUYỀN
+                    if line_choice == "Dây chuyền sơn phủ (Coating)":
+                        tab_trend, tab_dist, tab_compare = st.tabs(["📈 Trend Analysis", "📊 Distribution & SPC", "🔄 Before vs After"])
+                    else:
+                        tab_trend, tab_dist = st.tabs(["📈 Trend Analysis", "📊 Distribution & SPC"])
+                        
                     ucl_v1, lcl_v1 = mu + 3*sigma_fixed, mu - 3*sigma_fixed
 
                     with tab_trend:
                         fig_t, ax_t = plt.subplots(figsize=(12, 6))
                         x_coords = np.arange(1, n+1)
                         
-                        # 1. Vẽ đường xu hướng và tất cả các điểm màu xanh (Mặc định)
                         ax_t.plot(x_coords, plot_data, marker="o", markersize=6, color="#1f77b4", label="Actual Value", zorder=1)
                         
-                        # 2. XÁC ĐỊNH & TÔ ĐỎ CÁC ĐIỂM VƯỢT GIỚI HẠN (Out of Control)
                         mask_out = pd.Series([False] * len(plot_data))
-                        if int_usl is not None:
-                            mask_out = mask_out | (plot_data > int_usl)
-                        if int_lsl is not None:
-                            mask_out = mask_out | (plot_data < int_lsl)
+                        if int_usl is not None: mask_out = mask_out | (plot_data > int_usl)
+                        if int_lsl is not None: mask_out = mask_out | (plot_data < int_lsl)
                             
-                        # Nếu có điểm vượt giới hạn, vẽ đè chấm màu đỏ lên
                         if mask_out.any():
                             ax_t.scatter(x_coords[mask_out], plot_data[mask_out], color="red", s=80, 
                                          edgecolor="black", zorder=2, label="Out of Int. Limit")
 
-                        # 3. Vẽ các đường giới hạn (Limit Lines) - ĐÃ ĐỔI MÀU
                         ax_t.axhline(mu, color="blue", ls="-", lw=2, label=f"Mean: {mu:.1f}")
                         if cust_lsl: ax_t.axhline(cust_lsl, color="green", ls="-", lw=3, label="Cust LSL")
                         if cust_usl: ax_t.axhline(cust_usl, color="green", ls="-", lw=3, label="Cust USL")
                         if int_lsl: ax_t.axhline(int_lsl, color="red", ls="--", lw=3, label="Int LSL")
                         if int_usl: ax_t.axhline(int_usl, color="red", ls="--", lw=3, label="Int USL")
-                        ax_t.axhline(ucl_v1, color="#6A0DAD", ls=":", lw=3, label="3σ UCL") # Đổi sang Tím
-                        ax_t.axhline(lcl_v1, color="#6A0DAD", ls=":", lw=3, label="3σ LCL") # Đổi sang Tím
+                        ax_t.axhline(ucl_v1, color="#6A0DAD", ls=":", lw=3, label="3σ UCL")
+                        ax_t.axhline(lcl_v1, color="#6A0DAD", ls=":", lw=3, label="3σ LCL")
                         
-                        # 4. Định dạng biểu đồ
                         ax_t.set_xlabel("Coil Sequence")
                         ax_t.set_ylabel(f"{selected_label} Value")
                         ax_t.set_title(f"{selected_label} Trend Analysis (N={n})", pad=20)
                         ax_t.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), ncol=4, fontsize=9)
                         apply_full_border(ax_t); plt.tight_layout(); st.pyplot(fig_t)
                         
-                        # Nút xuất ảnh Trend ra Word
                         buf_t = export_to_word([fig_t], [f"Trend Analysis - {selected_label}"])
-                        st.download_button(
-                            label="📥 Download Trend Chart (High-Res Word)",
-                            data=buf_t,
-                            file_name=f"Trend_Report_{selected_label}.docx",
-                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                        )
+                        st.download_button(label="📥 Download Trend Chart (High-Res Word)", data=buf_t, file_name=f"Trend_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
                     with tab_dist:
                         fig_d, ax_d = plt.subplots(figsize=(12, 6))
@@ -192,27 +215,47 @@ if uploaded_file:
                                 y_pos = 1.02 + (level * 0.05) 
                                 ax.text(val, y_pos, f"{val:.1f}", color=color, ha='center', va='bottom', transform=trans, fontweight='bold')
 
-                        # ĐÃ ĐỔI MÀU
                         add_vline_std(ax_d, mu, "blue", "-", "Mean", 0)
                         add_vline_std(ax_d, cust_lsl, "green", "-", "Cust LSL", 0)
                         add_vline_std(ax_d, cust_usl, "green", "-", "Cust USL", 0)
                         add_vline_std(ax_d, int_lsl, "red", "--", "Int LSL", 1)
                         add_vline_std(ax_d, int_usl, "red", "--", "Int USL", 1)
-                        add_vline_std(ax_d, ucl_v1, "#6A0DAD", ":", "3σ UCL", 2) # Đổi sang Tím
-                        add_vline_std(ax_d, lcl_v1, "#6A0DAD", ":", "3σ LCL", 2) # Đổi sang Tím
+                        add_vline_std(ax_d, ucl_v1, "#6A0DAD", ":", "3σ UCL", 2) 
+                        add_vline_std(ax_d, lcl_v1, "#6A0DAD", ":", "3σ LCL", 2) 
                         
                         ax_d.set_title(f"{selected_label} Distribution (N={n})", pad=55)
                         ax_d.legend(loc="upper left", bbox_to_anchor=(1, 1))
                         apply_full_border(ax_d); plt.tight_layout(); st.pyplot(fig_d)
                         
-                        # Nút xuất ảnh Distribution ra Word
                         buf_d = export_to_word([fig_d], [f"Distribution Analysis - {selected_label}"])
-                        st.download_button(
-                            label="📥 Download Distribution Chart (High-Res Word)",
-                            data=buf_d,
-                            file_name=f"Dist_Report_{selected_label}.docx",
-                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                        )
+                        st.download_button(label="📥 Download Distribution Chart (High-Res Word)", data=buf_d, file_name=f"Dist_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+
+                    # TAB SO SÁNH (CHỈ DÀNH CHO DÂY CHUYỀN SƠN PHỦ)
+                    if line_choice == "Dây chuyền sơn phủ (Coating)":
+                        with tab_compare:
+                            if plot_data_orig is not None and not plot_data_orig.isna().all():
+                                fig_c, ax_c = plt.subplots(figsize=(12, 6))
+                                x_coords = np.arange(1, n+1)
+                                
+                                # Vẽ đường Trước Sơn (Màu xám/Nét đứt)
+                                ax_c.plot(x_coords, plot_data_orig, marker="s", markersize=5, color="#808080", ls="--", label="Before Coating (原始)", alpha=0.7)
+                                
+                                # Vẽ đường Sau Sơn (Màu xanh/Nét liền)
+                                ax_c.plot(x_coords, plot_data, marker="o", markersize=6, color="#1f77b4", label="After Coating", zorder=3)
+                                
+                                if int_lsl: ax_c.axhline(int_lsl, color="red", ls="--", lw=2, label="Int LSL")
+                                if int_usl: ax_c.axhline(int_usl, color="red", ls="--", lw=2, label="Int USL")
+
+                                ax_c.set_xlabel("Coil Sequence")
+                                ax_c.set_ylabel(f"{selected_label} Value")
+                                ax_c.set_title(f"Effect of Coating Process: Before vs After ({selected_label})", pad=20)
+                                ax_c.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), ncol=4, fontsize=9)
+                                apply_full_border(ax_c); plt.tight_layout(); st.pyplot(fig_c)
+                                
+                                buf_c = export_to_word([fig_c], [f"Comparison Analysis - {selected_label}"])
+                                st.download_button(label="📥 Download Comparison Chart (High-Res Word)", data=buf_c, file_name=f"Compare_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+                            else:
+                                st.info(f"💡 Không tìm thấy dữ liệu trước sơn phủ (原始) hợp lệ cho chỉ tiêu {selected_label} trong file excel.")
 
                 # VIEW 2: SPC OPTIMIZATION
                 elif view_mode == "SPC Control Charts (I-MR)":
@@ -221,7 +264,6 @@ if uploaded_file:
                     with c_i1: k_std = st.number_input("Target Multiplier for StdDev (Sigma):", 1.0, 6.0, 3.0, 0.1)
                     with c_i2: k_iqr = st.number_input("Target Multiplier for IQR (k-factor):", 1.0, 6.0, 1.5, 0.1)
                     
-                    # Tính toán IQR chuẩn xác
                     q1, q3 = plot_data.quantile(0.25), plot_data.quantile(0.75)
                     iqr_val = q3 - q1
                     iqr_lsl = q1 - (k_iqr * iqr_val)
@@ -253,35 +295,28 @@ if uploaded_file:
                     
                     ax_i.axhline(mu + k_std*sigma_fixed, color="darkred", ls="-", label=f"Prop USL ({k_std}σ)")
                     ax_i.axhline(mu - k_std*sigma_fixed, color="darkred", ls="-", label=f"Prop LSL ({k_std}σ)")
-                    
-                    # Vẽ đường giới hạn theo IQR - ĐÃ ĐỔI MÀU
-                    ax_i.axhline(iqr_usl, color="brown", ls="--", label=f"Prop USL (IQR)") # Đổi sang Nâu
-                    ax_i.axhline(iqr_lsl, color="brown", ls="--", label=f"Prop LSL (IQR)") # Đổi sang Nâu
+                    ax_i.axhline(iqr_usl, color="brown", ls="--", label=f"Prop USL (IQR)")
+                    ax_i.axhline(iqr_lsl, color="brown", ls="--", label=f"Prop LSL (IQR)") 
                     
                     ax_i.set_xlabel("Coil Sequence")
                     ax_i.set_ylabel(f"{selected_label} Value")
-                    ax_i.set_title(f"I-Chart: Optimization Comparison (N={n})")
+                    ax_i.set_title(f"I-Chart: Optimization Comparison (N={n})", pad=20)
                     ax_i.legend(loc="upper left", bbox_to_anchor=(1, 1))
                     apply_full_border(ax_i); plt.tight_layout(); st.pyplot(fig_imr)
                     
-                    # Nút xuất ảnh I-MR ra Word
                     buf_i = export_to_word([fig_imr], [f"I-Chart Optimization - {selected_label}"])
-                    st.download_button(
-                        label="📥 Download I-MR Chart (High-Res Word)",
-                        data=buf_i,
-                        file_name=f"IMR_Report_{selected_label}.docx",
-                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                    )
+                    st.download_button(label="📥 Download I-MR Chart (High-Res Word)", data=buf_i, file_name=f"IMR_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
         # VIEW 3: EXECUTIVE SUMMARY 
         elif view_mode == "Executive Summary":
             st.title("📑 Executive Quality Summary")
             summary_data = []
-            zh_sum_map = {"YS": "降伏強度", "TS": "抗拉強度", "EL": "伸長率", "Hardness": "硬度", "YPE": "YPE"}
             
             for label in available:
-                short_key = metrics_map[label]; data_col = find_data_col(df, short_key)
-                zh_key = zh_sum_map.get(short_key, short_key)
+                short_key = metrics_map[label]
+                data_col = find_data_col(df, short_key)
+                zh_key = zh_map_global.get(short_key, short_key)
+                
                 if data_col:
                     p_data = pd.to_numeric(df[data_col], errors='coerce').dropna()
                     if len(p_data) == 0: continue
