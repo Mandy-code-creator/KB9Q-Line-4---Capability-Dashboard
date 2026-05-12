@@ -14,7 +14,7 @@ from docx.shared import Inches
 # ==========================================
 st.set_page_config(page_title="Line 4 Quality Analytics", layout="wide")
 
-# Thiết lập font hỗ trợ tiếng Trung để không bị lỗi ô vuông (▯▯)
+# Thiết lập font hỗ trợ tiếng Trung để không bị lỗi ô vuông (▯▯) ở Legend
 plt.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei', 'Arial Unicode MS', 'sans-serif']
 plt.rcParams['axes.unicode_minus'] = False
 
@@ -84,14 +84,10 @@ def export_to_word(figures, titles):
 # 3. MAIN APP LOGIC
 # ==========================================
 st.sidebar.header("📂 DATA SOURCE")
-# Bật tính năng upload nhiều file cùng lúc
 uploaded_files = st.sidebar.file_uploader("Upload Excel/CSV Reports", type=["xlsx", "csv", "xls"], accept_multiple_files=True)
 
 if uploaded_files:
-    # 1. Tạo Dropdown để người dùng chọn 1 file trong danh sách đã upload
     selected_filename = st.sidebar.selectbox("📝 Select File to Analyze:", [f.name for f in uploaded_files])
-    
-    # 2. Lấy đối tượng file tương ứng với tên đã chọn
     uploaded_file = next(f for f in uploaded_files if f.name == selected_filename)
     
     st.sidebar.markdown("---")
@@ -113,7 +109,7 @@ if uploaded_files:
         available = [k for k, v in metrics_map.items() if find_data_col(df, v)]
         
         if not available: 
-            st.warning(f"⚠️ Không tìm thấy cột dữ liệu tương ứng cho {line_choice} trong file '{selected_filename}'. Vui lòng kiểm tra lại file Excel.")
+            st.warning(f"⚠️ Không tìm thấy cột dữ liệu tương ứng cho {line_choice} trong file '{selected_filename}'. Vui lòng kiểm tra lại.")
             st.stop()
 
         view_mode = st.sidebar.radio("View Mode:", ["Process Analytics", "SPC Control Charts (I-MR)", "Executive Summary"])
@@ -132,34 +128,56 @@ if uploaded_files:
 
             if data_col:
                 # =================================================================
-                # TÌM CỘT TRƯỚC SƠN PHỦ (QUÉT CHỨA TỪ KHÓA ĐỂ CHỐNG LỖI KHOẢNG TRẮNG)
+                # TÌM CỘT TRƯỚC SƠN PHỦ - THUẬT TOÁN QUÉT CHUẨN XÁC CHỐNG LỖI KHOẢNG TRẮNG
                 # =================================================================
                 orig_col = None
                 if line_choice == "Dây chuyền sơn phủ (Coating)":
+                    search_map = {
+                        "YS": ["降伏強度", "原始"],
+                        "TS": ["抗拉強度", "原始"],
+                        "EL": ["伸長率", "原始"],
+                        "HRB": ["硬度", "HRB", "原始"]
+                    }
+                    keys_to_find = search_map.get(short_key, [])
                     for c in df.columns:
-                        if zh_key in c and "原始" in c:
+                        # Chuẩn hóa tuyệt đối: Xóa khoảng trắng, Tab, Xuống dòng và ép ngoặc về chuẩn
+                        c_norm = str(c).replace(" ", "").replace("\n", "").replace("\r", "").replace("\t", "").replace("（", "(").replace("）", ")")
+                        if keys_to_find and all(k in c_norm for k in keys_to_find):
                             orig_col = c
                             break
                 
-                # Đồng bộ Index 2 cột
+                # =================================================================
+                # LỌC DỮ LIỆU & TÍNH TOÁN GIÁ TRỊ TRÊN LÝ THUYẾT (A-B GRADE)
+                # =================================================================
+                temp_df = df.copy()
+                
                 if orig_col:
-                    temp_df = df[[orig_col, data_col]].copy()
                     temp_df[orig_col] = pd.to_numeric(temp_df[orig_col], errors='coerce')
-                    temp_df[data_col] = pd.to_numeric(temp_df[data_col], errors='coerce')
-                    temp_df = temp_df.dropna(subset=[data_col])
-                    
-                    plot_data = temp_df[data_col].reset_index(drop=True)
-                    plot_data_orig = temp_df[orig_col].reset_index(drop=True)
-                else:
-                    plot_data = pd.to_numeric(df[data_col], errors='coerce').dropna().reset_index(drop=True)
-                    plot_data_orig = None
-
-                n, mu, sigma_fixed = len(plot_data), plot_data.mean(), plot_data.std(ddof=1)
+                temp_df[data_col] = pd.to_numeric(temp_df[data_col], errors='coerce')
+                
+                # Biểu đồ hiển thị toàn bộ sequence
+                plot_df = temp_df.dropna(subset=[data_col]).reset_index(drop=True)
+                plot_data = plot_df[data_col]
+                plot_data_orig = plot_df[orig_col] if orig_col else None
+                n = len(plot_data)
                 data_max, data_min = plot_data.max(), plot_data.min()
 
+                # Tính Sigma và Mean giới hạn trong cuộn chất lượng A-B
+                df_calc = plot_df.copy()
+                grade_col = next((c for c in df.columns if any(kw in str(c).lower() for kw in ['grade', '等级', '等級', 'cấp', 'quality', 'loại'])), None)
+                if grade_col:
+                    df_calc = df_calc[df_calc[grade_col].astype(str).str.upper().str.contains(r'A|B', regex=True, na=False)]
+                    if df_calc.empty: df_calc = plot_df.copy() # Fallback nếu lọc bị rỗng
+                
+                calc_data = df_calc[data_col].dropna()
+                mu = calc_data.mean()
+                sigma_fixed = calc_data.std(ddof=1)
+
+                # =================================================================
+                # RENDER GIAO DIỆN
+                # =================================================================
                 st.title(f"📊 Quality Analytics: {selected_label} - {line_choice}")
 
-                # VIEW 1: PROCESS ANALYTICS
                 if view_mode == "Process Analytics":
                     if line_choice == "Dây chuyền sơn phủ (Coating)":
                         tab_trend, tab_dist, tab_compare = st.tabs(["📈 Trend Analysis", "📊 Distribution & SPC", "🔄 Before vs After"])
@@ -230,7 +248,12 @@ if uploaded_files:
 
                     if line_choice == "Dây chuyền sơn phủ (Coating)":
                         with tab_compare:
-                            if plot_data_orig is not None and not plot_data_orig.isna().all():
+                            if orig_col is None:
+                                st.error(f"❌ Không tìm thấy cột chứa dữ liệu (原始) cho {selected_label}.")
+                                st.info(f"👉 Danh sách cột hiện có: {', '.join(df.columns.tolist()[:20])}...")
+                            elif plot_data_orig.isna().all():
+                                st.warning(f"⚠️ Đã tìm thấy cột '{orig_col}' nhưng toàn bộ dữ liệu bên trong bị rỗng.")
+                            else:
                                 fig_c, ax_c = plt.subplots(figsize=(12, 6))
                                 x_coords = np.arange(1, n+1)
                                 
@@ -248,17 +271,14 @@ if uploaded_files:
                                 
                                 buf_c = export_to_word([fig_c], [f"Comparison Analysis - {selected_label}"])
                                 st.download_button(label="📥 Download Comparison Chart", data=buf_c, file_name=f"Compare_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-                            else:
-                                st.info(f"💡 Không tìm thấy dữ liệu trước sơn phủ (原始) hợp lệ cho chỉ tiêu {selected_label} trong file excel.")
 
-                # VIEW 2: SPC OPTIMIZATION
                 elif view_mode == "SPC Control Charts (I-MR)":
                     st.subheader("II. Control Limit Optimization & I-MR")
                     c_i1, c_i2 = st.columns(2)
                     with c_i1: k_std = st.number_input("Target Multiplier for StdDev (Sigma):", 1.0, 6.0, 3.0, 0.1)
                     with c_i2: k_iqr = st.number_input("Target Multiplier for IQR (k-factor):", 1.0, 6.0, 1.5, 0.1)
                     
-                    q1, q3 = plot_data.quantile(0.25), plot_data.quantile(0.75)
+                    q1, q3 = calc_data.quantile(0.25), calc_data.quantile(0.75)
                     iqr_val = q3 - q1
                     iqr_lsl = q1 - (k_iqr * iqr_val)
                     iqr_usl = q3 + (k_iqr * iqr_val)
@@ -267,7 +287,7 @@ if uploaded_files:
                     with col_r1:
                         st.write("**Method: Standard Deviation**")
                         st.table(pd.DataFrame({
-                            "Metric": ["N", "Max", "Min", "Mean", "Sigma", "LSL", "USL"],
+                            "Metric": ["N", "Max", "Min", "Theoretical Mean", "Sigma", "LSL", "USL"],
                             "Value": [str(n), format_num(data_max), format_num(data_min), format_num(mu), format_num(sigma_fixed), format_num(mu - k_std*sigma_fixed), format_num(mu + k_std*sigma_fixed)]
                         }))
                     with col_r2:
@@ -279,7 +299,7 @@ if uploaded_files:
 
                     fig_imr, ax_i = plt.subplots(figsize=(12, 6))
                     ax_i.plot(plot_data, marker="o", color="#1f77b4", label="Actual Data", alpha=0.7)
-                    ax_i.axhline(mu, color="blue", ls="-", lw=2, label="Mean")
+                    ax_i.axhline(mu, color="blue", ls="-", lw=2, label="Theoretical Mean")
                     
                     if int_lsl: ax_i.axhline(int_lsl, color="red", ls="--", lw=2, label="Current Int LSL")
                     if int_usl: ax_i.axhline(int_usl, color="red", ls="--", lw=2, label="Current Int USL")
@@ -297,9 +317,6 @@ if uploaded_files:
                     ax_i.set_title(f"I-Chart: Optimization Comparison (N={n})", pad=20)
                     ax_i.legend(loc="upper left", bbox_to_anchor=(1, 1))
                     apply_full_border(ax_i); plt.tight_layout(); st.pyplot(fig_imr)
-                    
-                    buf_i = export_to_word([fig_imr], [f"I-Chart Optimization - {selected_label}"])
-                    st.download_button(label="📥 Download I-MR Chart (High-Res Word)", data=buf_i, file_name=f"IMR_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
         elif view_mode == "Executive Summary":
             st.title("📑 Executive Quality Summary")
