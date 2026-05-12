@@ -35,7 +35,6 @@ plt.rcParams.update({
 @st.cache_data
 def load_and_clean_data(file):
     df = pd.read_csv(file) if file.name.endswith('.csv') else pd.read_excel(file)
-    # Giữ nguyên khoảng trắng giữa các từ để mapping chính xác
     df.columns = [str(c).strip() for c in df.columns]
     return df
 
@@ -94,9 +93,7 @@ if uploaded_files:
         df_raw = load_and_clean_data(uploaded_file)
         df = df_raw.copy()
         
-        # =================================================================
         # TỰ ĐỘNG NHẬN DIỆN DÂY CHUYỀN THÔNG QUA TÊN CỘT
-        # =================================================================
         is_coating_line = any("原始" in str(c) for c in df.columns)
         line_choice = "Dây chuyền sơn phủ (Coating)" if is_coating_line else "Dây chuyền mạ (Galvanizing)"
         
@@ -133,20 +130,23 @@ if uploaded_files:
             cust_usl = get_limit(df, zh_key, "max", "客戶要求")
 
             if data_col:
+                # =================================================================
+                # THUẬT TOÁN QUÉT TỪ KHÓA BẤT BIẾN (TÌM CỘT 原始)
+                # =================================================================
                 orig_col = None
                 if line_choice == "Dây chuyền sơn phủ (Coating)":
-                    orig_exact_map = {
-                        "YS": "降伏強度 原始",
-                        "TS": "抗拉強度 原始",
-                        "EL": "伸長率 原始",
-                        "HRB": "硬度 HRB 原始"
+                    search_keywords = {
+                        "YS": ["降伏", "原始"],
+                        "TS": ["抗拉", "原始"],
+                        "EL": ["伸長", "原始"],
+                        "HRB": ["硬度", "原始"]
                     }
-                    target_orig = orig_exact_map.get(short_key)
-                    if target_orig:
-                        for c in df.columns:
-                            if target_orig in c or target_orig.replace(" ", "") in str(c).replace(" ", ""):
-                                orig_col = c
-                                break
+                    target_kws = search_keywords.get(short_key, [])
+                    for c in df.columns:
+                        # Chỉ cần tên cột CHỨA đủ các từ khóa là lụm luôn
+                        if target_kws and all(kw in str(c) for kw in target_kws):
+                            orig_col = c
+                            break
                 
                 temp_df = df.copy()
                 
@@ -326,7 +326,7 @@ if uploaded_files:
                 if data_col:
                     p_data = pd.to_numeric(df[data_col], errors='coerce').dropna()
                     if len(p_data) == 0: continue
-                    mu_v, p_data.mean()
+                    mu_v = p_data.mean()
                     sig_v = p_data.std(ddof=1)
                     i_lsl = get_limit(df, zh_key, "min", "管制")
                     i_usl = get_limit(df, zh_key, "max", "管制")
