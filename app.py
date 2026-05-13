@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 import re
-from scipy.stats import norm, ttest_ind
+from scipy.stats import norm, ttest_ind, sem, t
 import io
 from docx import Document
 from docx.shared import Inches
@@ -96,7 +96,7 @@ if uploaded_files:
     ])
 
     # =========================================================================
-    # MODE 1: CROSS-LINE COMPARISON (STATISTICAL SHIFT ANALYSIS)
+    # MODE 1: CROSS-LINE COMPARISON (AUTO-ANALYZE ALL PROPERTIES)
     # =========================================================================
     if view_mode == "Cross-Line Comparison 🔀":
         st.title("🔀 Statistical Process Shift & Limits Recommendation")
@@ -107,117 +107,121 @@ if uploaded_files:
             file_names = [f.name for f in uploaded_files]
             
             st.markdown("### 1. Assign Line Data")
-            st.info("Assign the correct file to each process to evaluate the statistical shift (Δ = Coating - Galvanizing) and generate optimal limits.")
+            st.info("Assign the correct file to each process. The system will automatically evaluate the shift for ALL common mechanical properties.")
             
-            c1, c2, c3 = st.columns([2, 2, 1])
+            c1, c2 = st.columns(2)
             with c1: ma_filename = st.selectbox("🏭 Select Galvanizing File:", file_names)
             with c2: son_filename = st.selectbox("🏭 Select Coating File:", file_names, index=1)
-            with c3: selected_label = st.selectbox("Parameter:", list(metrics_map.keys()))
 
             if ma_filename == son_filename:
                 st.error("❌ You selected the same file for both lines. Please choose different files.")
             else:
-                short_key = metrics_map[selected_label]
-                zh_key = zh_map_global.get(short_key, short_key)
-
                 file_ma = next(f for f in uploaded_files if f.name == ma_filename)
                 df_ma = load_and_clean_data(file_ma)
-                col_ma = find_data_col(df_ma, short_key)
                 
                 file_son = next(f for f in uploaded_files if f.name == son_filename)
                 df_son = load_and_clean_data(file_son)
-                col_son = find_data_col(df_son, short_key)
 
-                if not col_ma or not col_son:
-                    st.error("❌ Data column not found in one or both selected files.")
+                common_labels = [k for k, v in metrics_map.items() if find_data_col(df_ma, v) and find_data_col(df_son, v)]
+
+                if not common_labels:
+                    st.error("❌ No common mechanical property columns found between the two files.")
                 else:
-                    vals_ma_full = pd.to_numeric(df_ma[col_ma], errors='coerce').dropna()
-                    vals_son_full = pd.to_numeric(df_son[col_son], errors='coerce').dropna()
-
-                    def get_theoretical_mean(df, data_col):
-                        df_calc = df.dropna(subset=[data_col]).copy()
-                        g_col = next((c for c in df.columns if any(kw in str(c).lower() for kw in ['grade', '等级', '等級', 'cấp', 'quality', 'loại'])), None)
-                        if g_col:
-                            f_df = df_calc[df_calc[g_col].astype(str).str.upper().str.contains(r'A|B', regex=True, na=False)]
-                            if not f_df.empty: df_calc = f_df
-                        return df_calc[data_col].mean()
-
-                    mean_ma = get_theoretical_mean(df_ma, col_ma)
-                    mean_son = get_theoretical_mean(df_son, col_son)
-                    delta = mean_son - mean_ma
-
-                    lsl_son = get_limit(df_son, zh_key, "min", "管制")
-                    usl_son = get_limit(df_son, zh_key, "max", "管制")
-
-                    s_lsl = (lsl_son - delta) if lsl_son is not None else "N/A"
-                    s_usl = (usl_son - delta) if usl_son is not None else "N/A"
-
-                    # 1. DELTA & RECOMMENDATION TABLE
-                    st.markdown("---")
-                    st.subheader(f"🔄 Optimal Limits Recommendation ({selected_label})")
+                    st.success(f"✅ Found {len(common_labels)} common properties to analyze: {', '.join(common_labels)}")
                     
-                    delta_data = [{
-                        "Parameter": selected_label,
-                        "Galv. Mean (Theo.)": format_num(mean_ma),
-                        "Coating Mean (Theo.)": format_num(mean_son),
-                        "Shift (Δ)": format_num(delta),
-                        "Current Coating LSL": format_num(lsl_son) if lsl_son is not None else "N/A",
-                        "Current Coating USL": format_num(usl_son) if usl_son is not None else "N/A",
-                        "Recommended Galv. LSL": format_num(s_lsl) if isinstance(s_lsl, (int, float)) else s_lsl,
-                        "Recommended Galv. USL": format_num(s_usl) if isinstance(s_usl, (int, float)) else s_usl
-                    }]
-                    st.dataframe(pd.DataFrame(delta_data), hide_index=True, use_container_width=True)
+                    for selected_label in common_labels:
+                        st.markdown(f"<hr><h2 style='color: #2E86C1;'>🔹 Analysis for Parameter: {selected_label}</h2>", unsafe_allow_html=True)
+                        
+                        short_key = metrics_map[selected_label]
+                        zh_key = zh_map_global.get(short_key, short_key)
 
-                    # 2. STATISTICAL SIGNIFICANCE (T-TEST)
-                    st.markdown("### 🔬 2-Sample T-Test (Statistical Significance)")
-                    
-                    t_stat, p_val = ttest_ind(vals_son_full, vals_ma_full, equal_var=False)
-                    is_significant = "YES (Significant Shift)" if p_val < 0.05 else "NO (Random Variation)"
-                    
-                    t_test_data = pd.DataFrame([{
-                        "Hypothesis Test": "Difference in Means (Coating - Galvanizing) ≠ 0",
-                        "T-Statistic": format_num(t_stat),
-                        "P-Value": f"{p_val:.4f}",
-                        "Statistically Significant? (<0.05)": is_significant
-                    }])
-                    st.table(t_test_data)
-                    
-                    st.caption(f"*Statistical Interpretation:* The P-Value indicates the probability that the observed shift (Δ = {format_num(delta)}) occurred by random chance. A value below 0.05 strongly proves that the Coating process structurally alters the {selected_label}.")
+                        col_ma = find_data_col(df_ma, short_key)
+                        col_son = find_data_col(df_son, short_key)
 
-                    # 3. OVERLAID NORMAL DISTRIBUTION PLOT (THE SPC STANDARD)
-                    st.markdown("### 📈 Process Shift Distribution (Normal Fit)")
-                    fig_comp, ax_comp = plt.subplots(figsize=(10, 6))
-                    
-                    for label_name, vals, color in [
-                        (f"Galvanizing Line (Before)", vals_ma_full, '#1f77b4'),
-                        (f"Coating Line (After)", vals_son_full, '#ff7f0e')
-                    ]:
-                        if len(vals) > 1 and vals.std() > 0:
-                            mu_val = vals.mean()
-                            sigma_val = vals.std(ddof=1)
+                        vals_ma_full = pd.to_numeric(df_ma[col_ma], errors='coerce').dropna()
+                        vals_son_full = pd.to_numeric(df_son[col_son], errors='coerce').dropna()
+
+                        def get_theoretical_mean(df, data_col):
+                            df_calc = df.dropna(subset=[data_col]).copy()
+                            g_col = next((c for c in df.columns if any(kw in str(c).lower() for kw in ['grade', '等级', '等級', 'cấp', 'quality', 'loại'])), None)
+                            if g_col:
+                                f_df = df_calc[df_calc[g_col].astype(str).str.upper().str.contains(r'A|B', regex=True, na=False)]
+                                if not f_df.empty: df_calc = f_df
+                            return df_calc[data_col].mean()
+
+                        mean_ma = get_theoretical_mean(df_ma, col_ma)
+                        mean_son = get_theoretical_mean(df_son, col_son)
+                        delta = mean_son - mean_ma
+
+                        lsl_son = get_limit(df_son, zh_key, "min", "管制")
+                        usl_son = get_limit(df_son, zh_key, "max", "管制")
+
+                        s_lsl = (lsl_son - delta) if lsl_son is not None else "N/A"
+                        s_usl = (usl_son - delta) if usl_son is not None else "N/A"
+
+                        # 1. DELTA & RECOMMENDATION TABLE
+                        st.markdown(f"#### 🔄 Optimal Limits Recommendation ({selected_label})")
+                        delta_data = [{
+                            "Parameter": selected_label,
+                            "Galv. Mean (Theo.)": format_num(mean_ma),
+                            "Coating Mean (Theo.)": format_num(mean_son),
+                            "Shift (Δ)": format_num(delta),
+                            "Current Coating LSL": format_num(lsl_son) if lsl_son is not None else "N/A",
+                            "Current Coating USL": format_num(usl_son) if usl_son is not None else "N/A",
+                            "Recommended Galv. LSL": format_num(s_lsl) if isinstance(s_lsl, (int, float)) else s_lsl,
+                            "Recommended Galv. USL": format_num(s_usl) if isinstance(s_usl, (int, float)) else s_usl
+                        }]
+                        st.dataframe(pd.DataFrame(delta_data), hide_index=True, use_container_width=True)
+
+                        col_test, col_chart = st.columns([1, 2])
+                        
+                        # 2. STATISTICAL SIGNIFICANCE (T-TEST)
+                        with col_test:
+                            st.markdown("#### 🔬 2-Sample T-Test")
+                            t_stat, p_val = ttest_ind(vals_son_full, vals_ma_full, equal_var=False)
+                            is_significant = "YES" if p_val < 0.05 else "NO"
                             
-                            # Generate smooth bell curve
-                            x_range = np.linspace(mu_val - 4*sigma_val, mu_val + 4*sigma_val, 500)
-                            y_vals = norm.pdf(x_range, mu_val, sigma_val)
+                            t_test_data = pd.DataFrame([{
+                                "Metric": "T-Statistic", "Value": format_num(t_stat)
+                            }, {
+                                "Metric": "P-Value", "Value": f"{p_val:.4f}"
+                            }, {
+                                "Metric": "Significant Shift? (<0.05)", "Value": is_significant
+                            }])
+                            st.table(t_test_data)
+                            st.caption(f"*Interpretation:* A P-Value < 0.05 proves the Coating process structurally alters the {selected_label}.")
+
+                        # 3. OVERLAID NORMAL DISTRIBUTION PLOT
+                        with col_chart:
+                            st.markdown("#### 📈 Process Shift Distribution")
+                            fig_comp, ax_comp = plt.subplots(figsize=(8, 5))
                             
-                            ax_comp.plot(x_range, y_vals, color=color, lw=3, label=label_name)
-                            ax_comp.fill_between(x_range, y_vals, alpha=0.3, color=color)
-                            ax_comp.axvline(mu_val, color=color, linestyle='--', alpha=0.8) # Mean line
-                    
-                    ax_comp.set_ylabel("Probability Density")
-                    ax_comp.set_xlabel(f"{selected_label} Value")
-                    ax_comp.set_title(f"Process Shift Comparison: {selected_label} (Δ = {format_num(delta)})", pad=20)
-                    ax_comp.legend(loc="upper right")
-                    apply_full_border(ax_comp)
-                    plt.tight_layout()
-                    
-                    st.pyplot(fig_comp)
-                    
-                    buf_comp = export_to_word([fig_comp], [f"Distribution Shift Chart - {selected_label}"])
-                    st.download_button(label="📥 Download Distribution Chart", data=buf_comp, file_name=f"ShiftPlot_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+                            for label_name, vals, color in [
+                                (f"Galvanizing Line", vals_ma_full, '#1f77b4'),
+                                (f"Coating Line", vals_son_full, '#ff7f0e')
+                            ]:
+                                if len(vals) > 1 and vals.std() > 0:
+                                    mu_val = vals.mean()
+                                    sigma_val = vals.std(ddof=1)
+                                    
+                                    x_range = np.linspace(mu_val - 4*sigma_val, mu_val + 4*sigma_val, 500)
+                                    bin_width = (vals.max() - vals.min()) / 20 if vals.max() > vals.min() else 1
+                                    y_vals = norm.pdf(x_range, mu_val, sigma_val) * len(vals) * bin_width
+                                    
+                                    ax_comp.plot(x_range, y_vals, color=color, lw=3, label=label_name)
+                                    ax_comp.fill_between(x_range, y_vals, alpha=0.3, color=color)
+                                    ax_comp.axvline(mu_val, color=color, linestyle='--', alpha=0.8) 
+                            
+                            ax_comp.set_ylabel("Coil Count")
+                            ax_comp.set_xlabel(f"{selected_label} Value")
+                            ax_comp.set_title(f"Shift Comparison: {selected_label} (Δ = {format_num(delta)})", pad=15)
+                            ax_comp.legend(loc="upper right")
+                            apply_full_border(ax_comp)
+                            plt.tight_layout()
+                            st.pyplot(fig_comp)
 
     # =========================================================================
-    # MODE 2: SINGLE FILE ANALYSIS (PROCESS, SPC, SUMMARY)
+    # MODE 2: SINGLE FILE ANALYSIS (AUTO-ANALYZE ALL PROPERTIES)
     # =========================================================================
     else:
         selected_filename = st.sidebar.selectbox("📝 Select File to Analyze:", [f.name for f in uploaded_files])
@@ -245,48 +249,44 @@ if uploaded_files:
                 st.warning(f"⚠️ Mechanical property data column not found in file '{selected_filename}'. Please check again.")
                 st.stop()
 
-            if view_mode != "Executive Summary":
-                selected_label = st.sidebar.selectbox("Select Parameter:", available)
-                short_key = metrics_map[selected_label]
-                data_col = find_data_col(df, short_key) 
+            if view_mode == "Process Analytics":
+                st.title(f"📊 Process Analytics - {line_choice}")
+                st.success(f"✅ Generating reports for {len(available)} parameters automatically: {', '.join(available)}")
                 
-                zh_key = zh_map_global.get(short_key, short_key)
-                
-                int_lsl = get_limit(df, zh_key, "min", "管制")
-                int_usl = get_limit(df, zh_key, "max", "管制")
-                cust_lsl = get_limit(df, zh_key, "min", "客戶要求")
-                cust_usl = get_limit(df, zh_key, "max", "客戶要求")
-
-                if data_col:
-                    temp_df = df.copy()
-                    temp_df[data_col] = pd.to_numeric(temp_df[data_col], errors='coerce')
+                for selected_label in available:
+                    st.markdown(f"<hr><h2 style='color: #2E86C1;'>🔹 Parameter: {selected_label}</h2>", unsafe_allow_html=True)
+                    short_key = metrics_map[selected_label]
+                    data_col = find_data_col(df, short_key) 
+                    zh_key = zh_map_global.get(short_key, short_key)
                     
-                    plot_df = temp_df.dropna(subset=[data_col]).reset_index(drop=True)
-                    plot_data = plot_df[data_col]
-                    n = len(plot_data)
-                    data_max, data_min = plot_data.max(), plot_data.min()
+                    int_lsl = get_limit(df, zh_key, "min", "管制")
+                    int_usl = get_limit(df, zh_key, "max", "管制")
+                    cust_lsl = get_limit(df, zh_key, "min", "客戶要求")
+                    cust_usl = get_limit(df, zh_key, "max", "客戶要求")
 
-                    df_calc = plot_df.copy()
-                    grade_col = next((c for c in df.columns if any(kw in str(c).lower() for kw in ['grade', '等级', '等級', 'cấp', 'quality', 'loại'])), None)
-                    if grade_col:
-                        df_calc = df_calc[df_calc[grade_col].astype(str).str.upper().str.contains(r'A|B', regex=True, na=False)]
-                    
-                    if grade_col is None or df_calc.empty:
+                    if data_col:
+                        temp_df = df.copy()
+                        temp_df[data_col] = pd.to_numeric(temp_df[data_col], errors='coerce')
+                        
+                        plot_df = temp_df.dropna(subset=[data_col]).reset_index(drop=True)
+                        plot_data = plot_df[data_col]
+                        n = len(plot_data)
+
                         df_calc = plot_df.copy()
-                    
-                    calc_data = df_calc[data_col].dropna()
-                    mu = calc_data.mean()
-                    sigma_fixed = calc_data.std(ddof=1)
+                        grade_col = next((c for c in df.columns if any(kw in str(c).lower() for kw in ['grade', '等级', '等級', 'cấp', 'quality', 'loại'])), None)
+                        if grade_col:
+                            f_df = df_calc[df_calc[grade_col].astype(str).str.upper().str.contains(r'A|B', regex=True, na=False)]
+                            if not f_df.empty: df_calc = f_df
+                        
+                        calc_data = df_calc[data_col].dropna()
+                        mu = calc_data.mean()
+                        sigma_fixed = calc_data.std(ddof=1)
 
-                    st.title(f"📊 Quality Analytics: {selected_label} - {line_choice}")
-
-                    if view_mode == "Process Analytics":
-                        tab_trend, tab_dist = st.tabs(["📈 Trend Analysis", "📊 Distribution & SPC"])
-                            
+                        tab_trend, tab_dist = st.tabs([f"📈 {selected_label} Trend", f"📊 {selected_label} Distribution"])
                         ucl_v1, lcl_v1 = mu + 3*sigma_fixed, mu - 3*sigma_fixed
 
                         with tab_trend:
-                            fig_t, ax_t = plt.subplots(figsize=(12, 6))
+                            fig_t, ax_t = plt.subplots(figsize=(12, 5))
                             x_coords = np.arange(1, n+1)
                             ax_t.plot(x_coords, plot_data, marker="o", markersize=6, color="#1f77b4", label="Actual Value", zorder=1)
                             
@@ -309,12 +309,9 @@ if uploaded_files:
                             ax_t.set_title(f"{selected_label} Trend Analysis (N={n})", pad=20)
                             ax_t.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), ncol=4, fontsize=9)
                             apply_full_border(ax_t); plt.tight_layout(); st.pyplot(fig_t)
-                            
-                            buf_t = export_to_word([fig_t], [f"Trend Analysis - {selected_label}"])
-                            st.download_button(label="📥 Download Trend Chart", data=buf_t, file_name=f"Trend_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
                         with tab_dist:
-                            fig_d, ax_d = plt.subplots(figsize=(12, 6))
+                            fig_d, ax_d = plt.subplots(figsize=(12, 5))
                             ax_d.hist(plot_data, bins=20, density=False, alpha=0.4, color="#7FB3D5", edgecolor="black")
                             ax_d.yaxis.set_major_locator(MaxNLocator(integer=True))
                             ax_d.set_xlabel(f"{selected_label} Value")
@@ -336,23 +333,47 @@ if uploaded_files:
                                     y_pos = 1.02 + (level * 0.05) 
                                     ax.text(val, y_pos, f"{val:.1f}", color=color, ha='center', va='bottom', transform=trans, fontweight='bold')
 
-                            add_vline_std(ax_d, mu, "blue", "-", "Theoretical Mean", 0)
-                            add_vline_std(ax_d, cust_lsl, "green", "-", "Cust LSL", 0)
-                            add_vline_std(ax_d, cust_usl, "green", "-", "Cust USL", 0)
+                            add_vline_std(ax_d, mu, "blue", "-", "Mean", 0)
                             add_vline_std(ax_d, int_lsl, "red", "--", "Int LSL", 1)
                             add_vline_std(ax_d, int_usl, "red", "--", "Int USL", 1)
-                            add_vline_std(ax_d, ucl_v1, "#6A0DAD", ":", "3σ UCL", 2) 
-                            add_vline_std(ax_d, lcl_v1, "#6A0DAD", ":", "3σ LCL", 2) 
                             
                             ax_d.set_title(f"{selected_label} Distribution (N={n})", pad=55)
                             ax_d.legend(loc="upper left", bbox_to_anchor=(1, 1))
                             apply_full_border(ax_d); plt.tight_layout(); st.pyplot(fig_d)
 
-                    elif view_mode == "SPC Control Charts (I-MR)":
-                        st.subheader("II. Control Limit Optimization & I-MR")
-                        c_i1, c_i2 = st.columns(2)
-                        with c_i1: k_std = st.number_input("Target Multiplier for StdDev (Sigma):", 1.0, 6.0, 3.0, 0.1)
-                        with c_i2: k_iqr = st.number_input("Target Multiplier for IQR (k-factor):", 1.0, 6.0, 1.5, 0.1)
+            elif view_mode == "SPC Control Charts (I-MR)":
+                st.title(f"📈 SPC Control Charts - {line_choice}")
+                st.info("Configure global target multipliers below. The system will apply them to all available mechanical properties.")
+                
+                c_i1, c_i2 = st.columns(2)
+                with c_i1: k_std = st.number_input("Target Multiplier for StdDev (Sigma):", 1.0, 6.0, 3.0, 0.1)
+                with c_i2: k_iqr = st.number_input("Target Multiplier for IQR (k-factor):", 1.0, 6.0, 1.5, 0.1)
+
+                for selected_label in available:
+                    st.markdown(f"<hr><h2 style='color: #2E86C1;'>🔹 Control Limits: {selected_label}</h2>", unsafe_allow_html=True)
+                    short_key = metrics_map[selected_label]
+                    data_col = find_data_col(df, short_key) 
+                    zh_key = zh_map_global.get(short_key, short_key)
+
+                    int_lsl = get_limit(df, zh_key, "min", "管制")
+                    int_usl = get_limit(df, zh_key, "max", "管制")
+
+                    if data_col:
+                        temp_df = df.copy()
+                        temp_df[data_col] = pd.to_numeric(temp_df[data_col], errors='coerce')
+                        plot_df = temp_df.dropna(subset=[data_col]).reset_index(drop=True)
+                        plot_data = plot_df[data_col]
+                        n = len(plot_data)
+
+                        df_calc = plot_df.copy()
+                        grade_col = next((c for c in df.columns if any(kw in str(c).lower() for kw in ['grade', '等级', '等級', 'cấp', 'quality', 'loại'])), None)
+                        if grade_col:
+                            f_df = df_calc[df_calc[grade_col].astype(str).str.upper().str.contains(r'A|B', regex=True, na=False)]
+                            if not f_df.empty: df_calc = f_df
+                        
+                        calc_data = df_calc[data_col].dropna()
+                        mu = calc_data.mean()
+                        sigma_fixed = calc_data.std(ddof=1)
                         
                         q1, q3 = calc_data.quantile(0.25), calc_data.quantile(0.75)
                         iqr_val = q3 - q1
@@ -363,25 +384,22 @@ if uploaded_files:
                         with col_r1:
                             st.write("**Method: Standard Deviation**")
                             st.table(pd.DataFrame({
-                                "Metric": ["N", "Max", "Min", "Theoretical Mean", "Sigma", "LSL", "USL"],
-                                "Value": [str(n), format_num(data_max), format_num(data_min), format_num(mu), format_num(sigma_fixed), format_num(mu - k_std*sigma_fixed), format_num(mu + k_std*sigma_fixed)]
+                                "Metric": ["N", "Theo. Mean", "Sigma", "Prop LSL", "Prop USL"],
+                                "Value": [str(n), format_num(mu), format_num(sigma_fixed), format_num(mu - k_std*sigma_fixed), format_num(mu + k_std*sigma_fixed)]
                             }))
                         with col_r2:
                             st.write("**Method: IQR (Strict Standard)**")
                             st.table(pd.DataFrame({
-                                "Metric": ["N", "Q1 (25th)", "Q3 (75th)", "IQR", "k-factor", "LSL (Q1 - k*IQR)", "USL (Q3 + k*IQR)"],
-                                "Value": [str(n), format_num(q1), format_num(q3), format_num(iqr_val), str(k_iqr), format_num(iqr_lsl), format_num(iqr_usl)]
+                                "Metric": ["N", "IQR", "k-factor", "Prop LSL (IQR)", "Prop USL (IQR)"],
+                                "Value": [str(n), format_num(iqr_val), str(k_iqr), format_num(iqr_lsl), format_num(iqr_usl)]
                             }))
 
-                        fig_imr, ax_i = plt.subplots(figsize=(12, 6))
+                        fig_imr, ax_i = plt.subplots(figsize=(12, 5))
                         ax_i.plot(plot_data, marker="o", color="#1f77b4", label="Actual Data", alpha=0.7)
                         ax_i.axhline(mu, color="blue", ls="-", lw=2, label="Theoretical Mean")
                         
                         if int_lsl: ax_i.axhline(int_lsl, color="red", ls="--", lw=2, label="Current Int LSL")
                         if int_usl: ax_i.axhline(int_usl, color="red", ls="--", lw=2, label="Current Int USL")
-                        
-                        if cust_lsl: ax_i.axhline(cust_lsl, color="green", ls="-", lw=2.5, label="Cust LSL")
-                        if cust_usl: ax_i.axhline(cust_usl, color="green", ls="-", lw=2.5, label="Cust USL")
                         
                         ax_i.axhline(mu + k_std*sigma_fixed, color="darkred", ls="-", label=f"Prop USL ({k_std}σ)")
                         ax_i.axhline(mu - k_std*sigma_fixed, color="darkred", ls="-", label=f"Prop LSL ({k_std}σ)")
@@ -390,7 +408,7 @@ if uploaded_files:
                         
                         ax_i.set_xlabel("Coil Sequence")
                         ax_i.set_ylabel(f"{selected_label} Value")
-                        ax_i.set_title(f"I-Chart: Optimization Comparison (N={n})", pad=20)
+                        ax_i.set_title(f"I-Chart: Optimization Comparison ({selected_label})", pad=20)
                         ax_i.legend(loc="upper left", bbox_to_anchor=(1, 1))
                         apply_full_border(ax_i); plt.tight_layout(); st.pyplot(fig_imr)
 
