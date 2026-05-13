@@ -41,7 +41,6 @@ def find_data_col(df, key):
     for col in df.columns:
         if re.search(key, col, re.IGNORECASE) and not any(kw in col for kw in ["管制", "規格", "要求", "原始"]):
             return col
-    return col
     return None
 
 def get_limit(df, keyword, limit_type, category):
@@ -170,50 +169,49 @@ if uploaded_files:
                     }]
                     st.dataframe(pd.DataFrame(delta_data), hide_index=True, use_container_width=True)
 
-                    col_test, col_chart = st.columns([1, 2])
+                    st.markdown("#### 🔬 2-Sample T-Test")
+                    t_stat, p_val = ttest_ind(vals_son_full, vals_ma_full, equal_var=False)
+                    is_significant = "YES" if p_val < 0.05 else "NO"
                     
-                    with col_test:
-                        st.markdown("#### 🔬 2-Sample T-Test")
-                        t_stat, p_val = ttest_ind(vals_son_full, vals_ma_full, equal_var=False)
-                        is_significant = "YES" if p_val < 0.05 else "NO"
-                        
-                        t_test_data = pd.DataFrame([{
-                            "Metric": "T-Statistic", "Value": format_num(t_stat)
-                        }, {
-                            "Metric": "P-Value", "Value": f"{p_val:.4f}"
-                        }, {
-                            "Metric": "Significant Shift? (<0.05)", "Value": is_significant
-                        }])
-                        st.table(t_test_data)
-                        st.caption(f"*Interpretation:* A P-Value < 0.05 proves the Coating process structurally alters the {selected_label}.")
+                    t_test_data = pd.DataFrame([{
+                        "Metric": "T-Statistic", "Value": format_num(t_stat)
+                    }, {
+                        "Metric": "P-Value", "Value": f"{p_val:.4f}"
+                    }, {
+                        "Metric": "Significant Shift? (<0.05)", "Value": is_significant
+                    }])
+                    st.table(t_test_data)
+                    st.caption(f"*Interpretation:* A P-Value < 0.05 proves the Coating process structurally alters the {selected_label}.")
 
-                    with col_chart:
-                        st.markdown("#### 📈 Process Shift Distribution")
-                        fig_comp, ax_comp = plt.subplots(figsize=(8, 5))
-                        
-                        for label_name, vals, color in [
-                            (f"Galvanizing Line", vals_ma_full, '#1f77b4'),
-                            (f"Coating Line", vals_son_full, '#ff7f0e')
-                        ]:
-                            if len(vals) > 1 and vals.std() > 0:
-                                mu_val = vals.mean()
-                                sigma_val = vals.std(ddof=1)
-                                
-                                x_range = np.linspace(mu_val - 4*sigma_val, mu_val + 4*sigma_val, 500)
-                                bin_width = (vals.max() - vals.min()) / 20 if vals.max() > vals.min() else 1
-                                y_vals = norm.pdf(x_range, mu_val, sigma_val) * len(vals) * bin_width
-                                
-                                ax_comp.plot(x_range, y_vals, color=color, lw=3, label=label_name)
-                                ax_comp.fill_between(x_range, y_vals, alpha=0.3, color=color)
-                                ax_comp.axvline(mu_val, color=color, linestyle='--', alpha=0.8) 
-                        
-                        ax_comp.set_ylabel("Coil Count")
-                        ax_comp.set_xlabel(f"{selected_label} Value")
-                        ax_comp.set_title(f"Shift Comparison: {selected_label} (Δ = {format_num(delta)})", pad=15)
-                        ax_comp.legend(loc="upper right")
-                        apply_full_border(ax_comp)
-                        plt.tight_layout()
-                        st.pyplot(fig_comp)
+                    st.markdown("#### 📈 Process Shift Distribution")
+                    fig_comp, ax_comp = plt.subplots(figsize=(12, 6)) # Khôi phục tỷ lệ chuẩn 12x6
+                    
+                    for label_name, vals, color in [
+                        (f"Galvanizing Line", vals_ma_full, '#1f77b4'),
+                        (f"Coating Line", vals_son_full, '#ff7f0e')
+                    ]:
+                        if len(vals) > 1 and vals.std() > 0:
+                            mu_val = vals.mean()
+                            sigma_val = vals.std(ddof=1)
+                            
+                            x_range = np.linspace(mu_val - 4*sigma_val, mu_val + 4*sigma_val, 500)
+                            bin_width = (vals.max() - vals.min()) / 20 if vals.max() > vals.min() else 1
+                            y_vals = norm.pdf(x_range, mu_val, sigma_val) * len(vals) * bin_width
+                            
+                            ax_comp.plot(x_range, y_vals, color=color, lw=3, label=label_name)
+                            ax_comp.fill_between(x_range, y_vals, alpha=0.3, color=color)
+                            ax_comp.axvline(mu_val, color=color, linestyle='--', alpha=0.8) 
+                    
+                    ax_comp.set_ylabel("Coil Count")
+                    ax_comp.set_xlabel(f"{selected_label} Value")
+                    ax_comp.set_title(f"Shift Comparison: {selected_label} (Δ = {format_num(delta)})", pad=20)
+                    ax_comp.legend(loc="upper right")
+                    apply_full_border(ax_comp)
+                    plt.tight_layout()
+                    st.pyplot(fig_comp)
+                    
+                    buf_comp = export_to_word([fig_comp], [f"Distribution Shift Chart - {selected_label}"])
+                    st.download_button(label=f"📥 Download Chart ({selected_label})", data=buf_comp, file_name=f"ShiftPlot_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_cross_{selected_label}")
 
     # =========================================================================
     # MODE 2: TABBED ANALYSIS FOR INDIVIDUAL LINES
@@ -229,7 +227,6 @@ if uploaded_files:
         else:
             k_std, k_iqr = 3.0, 1.5
 
-        # TẠO 2 TABS TÁCH BIỆT CHO 2 DÂY CHUYỀN
         tab_ma, tab_son = st.tabs(["🏭 Galvanizing Line Data", "🎨 Coating Line Data"])
         
         line_configs = [
@@ -262,7 +259,6 @@ if uploaded_files:
                     st.warning(f"⚠️ Mechanical property data column not found in this file.")
                     continue
 
-                # --- RENDER VIEWS INSIDE THE TAB ---
                 if view_mode == "Executive Summary":
                     summary_data = []
                     for selected_label in available:
@@ -335,11 +331,12 @@ if uploaded_files:
                             sigma_fixed = calc_data.std(ddof=1)
 
                             if view_mode == "Process Analytics":
-                                col_trend, col_dist = st.columns(2)
+                                # KHÔI PHỤC THIẾT KẾ SUB-TABS THAY VÌ SỬ DỤNG CỘT (COLUMNS) NẰM NGANG
+                                tab_trend, tab_dist = st.tabs([f"📈 {selected_label} Trend", f"📊 {selected_label} Distribution"])
                                 ucl_v1, lcl_v1 = mu + 3*sigma_fixed, mu - 3*sigma_fixed
 
-                                with col_trend:
-                                    fig_t, ax_t = plt.subplots(figsize=(8, 5))
+                                with tab_trend:
+                                    fig_t, ax_t = plt.subplots(figsize=(12, 6)) # Tỷ lệ chuẩn
                                     x_coords = np.arange(1, n+1)
                                     ax_t.plot(x_coords, plot_data, marker="o", markersize=6, color="#1f77b4", label="Actual Value", zorder=1)
                                     
@@ -359,12 +356,15 @@ if uploaded_files:
                                     
                                     ax_t.set_xlabel("Coil Sequence")
                                     ax_t.set_ylabel(f"{selected_label} Value")
-                                    ax_t.set_title(f"{selected_label} Trend Analysis", pad=15)
-                                    ax_t.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), ncol=3, fontsize=9)
+                                    ax_t.set_title(f"{selected_label} Trend Analysis (N={n})", pad=20)
+                                    ax_t.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), ncol=4, fontsize=9)
                                     apply_full_border(ax_t); plt.tight_layout(); st.pyplot(fig_t)
+                                    
+                                    buf_t = export_to_word([fig_t], [f"Trend Analysis - {selected_label}"])
+                                    st.download_button(label=f"📥 Download Trend Chart ({selected_label})", data=buf_t, file_name=f"Trend_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_trend_{fname}_{selected_label}")
 
-                                with col_dist:
-                                    fig_d, ax_d = plt.subplots(figsize=(8, 5))
+                                with tab_dist:
+                                    fig_d, ax_d = plt.subplots(figsize=(12, 6)) # Tỷ lệ chuẩn
                                     ax_d.hist(plot_data, bins=20, density=False, alpha=0.4, color="#7FB3D5", edgecolor="black")
                                     ax_d.yaxis.set_major_locator(MaxNLocator(integer=True))
                                     ax_d.set_xlabel(f"{selected_label} Value")
@@ -390,9 +390,12 @@ if uploaded_files:
                                     add_vline_std(ax_d, int_lsl, "red", "--", "Int LSL", 1)
                                     add_vline_std(ax_d, int_usl, "red", "--", "Int USL", 1)
                                     
-                                    ax_d.set_title(f"{selected_label} Distribution", pad=15)
-                                    ax_d.legend(loc="upper right")
+                                    ax_d.set_title(f"{selected_label} Distribution (N={n})", pad=55)
+                                    ax_d.legend(loc="upper left", bbox_to_anchor=(1, 1))
                                     apply_full_border(ax_d); plt.tight_layout(); st.pyplot(fig_d)
+                                    
+                                    buf_d = export_to_word([fig_d], [f"Distribution Analysis - {selected_label}"])
+                                    st.download_button(label=f"📥 Download Dist Chart ({selected_label})", data=buf_d, file_name=f"Dist_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_dist_{fname}_{selected_label}")
 
                             elif view_mode == "SPC Control Charts (I-MR)":
                                 q1, q3 = calc_data.quantile(0.25), calc_data.quantile(0.75)
@@ -414,7 +417,7 @@ if uploaded_files:
                                         "Value": [str(n), format_num(iqr_val), str(k_iqr), format_num(iqr_lsl), format_num(iqr_usl)]
                                     }))
 
-                                fig_imr, ax_i = plt.subplots(figsize=(12, 4))
+                                fig_imr, ax_i = plt.subplots(figsize=(12, 6)) # Tỷ lệ chuẩn
                                 ax_i.plot(plot_data, marker="o", color="#1f77b4", label="Actual Data", alpha=0.7)
                                 ax_i.axhline(mu, color="blue", ls="-", lw=2, label="Theoretical Mean")
                                 
@@ -428,8 +431,11 @@ if uploaded_files:
                                 
                                 ax_i.set_xlabel("Coil Sequence")
                                 ax_i.set_ylabel(f"{selected_label} Value")
-                                ax_i.set_title(f"I-Chart: Control Limit Optimization ({selected_label})", pad=15)
-                                ax_i.legend(loc="upper center", bbox_to_anchor=(0.5, -0.2), ncol=4, fontsize=9)
+                                ax_i.set_title(f"I-Chart: Control Limit Optimization ({selected_label})", pad=20)
+                                ax_i.legend(loc="upper left", bbox_to_anchor=(1, 1))
                                 apply_full_border(ax_i); plt.tight_layout(); st.pyplot(fig_imr)
+                                
+                                buf_i = export_to_word([fig_imr], [f"SPC I-Chart Analysis - {selected_label}"])
+                                st.download_button(label=f"📥 Download SPC Chart ({selected_label})", data=buf_i, file_name=f"SPC_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_spc_{fname}_{selected_label}")
 else:
     st.info("👈 Please upload the production report to start.")
