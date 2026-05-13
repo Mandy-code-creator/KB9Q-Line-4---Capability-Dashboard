@@ -1,10 +1,11 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import matplotlib.subplots as plt
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 import re
-from scipy.stats import norm
+from scipy.stats import norm, gaussian_kde
 import io
 from docx import Document
 from docx.shared import Inches
@@ -96,48 +97,44 @@ if uploaded_files:
     ])
 
     # =========================================================================
-    # CHẾ ĐỘ 1: SO SÁNH CHÉO 2 FILE (MẠ vs SƠN)
+    # MODE 1: CROSS-LINE COMPARISON
     # =========================================================================
     if view_mode == "Cross-Line Comparison 🔀":
-        st.title("🔀 Phân tích Biến động & Đề xuất Giới hạn (Cross-Line)")
+        st.title("🔀 Process Shift Analysis & Recommended Limits")
         
         if len(uploaded_files) < 2:
-            st.warning("⚠️ Vui lòng Upload ít nhất 2 file báo cáo (1 file Mạ, 1 file Sơn) ở thanh bên trái để thực hiện so sánh.")
+            st.warning("⚠️ Please upload at least 2 report files (e.g., 1 Galvanizing, 1 Coating) on the left sidebar to perform comparison.")
         else:
             file_names = [f.name for f in uploaded_files]
             
-            st.markdown("### 1. Chỉ định Dữ liệu Dây chuyền")
-            st.info("Vui lòng chọn đúng File báo cáo của từng dây chuyền để hệ thống tính toán độ lệch (Δ = Sơn - Mạ).")
+            st.markdown("### 1. Assign Line Data")
+            st.info("Please select the correct report file for each line to calculate the shift (Δ = Coating - Galvanizing).")
             
             c1, c2, c3 = st.columns([2, 2, 1])
-            with c1: ma_filename = st.selectbox("🏭 Chọn File Dây chuyền Mạ (Galvanizing):", file_names)
-            with c2: son_filename = st.selectbox("🏭 Chọn File Dây chuyền Sơn (Coating):", file_names, index=1)
-            with c3: selected_label = st.selectbox("Chỉ tiêu:", list(metrics_map.keys()))
+            with c1: ma_filename = st.selectbox("🏭 Select Galvanizing File:", file_names)
+            with c2: son_filename = st.selectbox("🏭 Select Coating File:", file_names, index=1)
+            with c3: selected_label = st.selectbox("Parameter:", list(metrics_map.keys()))
 
             if ma_filename == son_filename:
-                st.error("❌ Bạn đang chọn cùng 1 file cho cả 2 dây chuyền. Vui lòng chọn 2 file khác nhau.")
+                st.error("❌ You selected the same file for both lines. Please choose different files.")
             else:
                 short_key = metrics_map[selected_label]
                 zh_key = zh_map_global.get(short_key, short_key)
 
-                # Đọc File Mạ
                 file_ma = next(f for f in uploaded_files if f.name == ma_filename)
                 df_ma = load_and_clean_data(file_ma)
                 col_ma = find_data_col(df_ma, short_key)
                 
-                # Đọc File Sơn
                 file_son = next(f for f in uploaded_files if f.name == son_filename)
                 df_son = load_and_clean_data(file_son)
                 col_son = find_data_col(df_son, short_key)
 
                 if not col_ma or not col_son:
-                    st.error("❌ Không tìm thấy cột dữ liệu tương ứng trong một hoặc cả hai file đã chọn.")
+                    st.error("❌ Data column not found in one or both selected files.")
                 else:
-                    # Lấy dữ liệu thuần để vẽ biểu đồ
                     vals_ma_full = pd.to_numeric(df_ma[col_ma], errors='coerce').dropna()
                     vals_son_full = pd.to_numeric(df_son[col_son], errors='coerce').dropna()
 
-                    # Lọc Grade A-B để tính Mean "Chuẩn"
                     def get_theoretical_mean(df, data_col):
                         df_calc = df.dropna(subset=[data_col]).copy()
                         g_col = next((c for c in df.columns if any(kw in str(c).lower() for kw in ['grade', '等级', '等級', 'cấp', 'quality', 'loại'])), None)
@@ -150,50 +147,51 @@ if uploaded_files:
                     mean_son = get_theoretical_mean(df_son, col_son)
                     delta = mean_son - mean_ma
 
-                    # Lấy LSL/USL của file Sơn để tính lùi
                     lsl_son = get_limit(df_son, zh_key, "min", "管制")
                     usl_son = get_limit(df_son, zh_key, "max", "管制")
 
                     s_lsl = (lsl_son - delta) if lsl_son is not None else "N/A"
                     s_usl = (usl_son - delta) if usl_son is not None else "N/A"
 
-                    # 1. BẢNG ĐỀ XUẤT DELTA
+                    # 1. DELTA TABLE
                     st.markdown("---")
-                    st.subheader(f"🔄 Bảng Đề xuất Giới hạn Mạ ({selected_label})")
+                    st.subheader(f"🔄 Recommended Galvanizing Limits ({selected_label})")
                     
                     delta_data = [{
-                        "Thông số": selected_label,
-                        "TB Mạ (Lý thuyết)": format_num(mean_ma),
-                        "TB Sơn (Lý thuyết)": format_num(mean_son),
-                        "Biến động (Δ)": format_num(delta),
-                        "LSL Sơn hiện tại": format_num(lsl_son) if lsl_son is not None else "N/A",
-                        "USL Sơn hiện tại": format_num(usl_son) if usl_son is not None else "N/A",
-                        "Đề xuất LSL Mạ": format_num(s_lsl) if isinstance(s_lsl, (int, float)) else s_lsl,
-                        "Đề xuất USL Mạ": format_num(s_usl) if isinstance(s_usl, (int, float)) else s_usl
+                        "Parameter": selected_label,
+                        "Galv. Mean (Theo.)": format_num(mean_ma),
+                        "Coating Mean (Theo.)": format_num(mean_son),
+                        "Shift (Δ)": format_num(delta),
+                        "Current Coating LSL": format_num(lsl_son) if lsl_son is not None else "N/A",
+                        "Current Coating USL": format_num(usl_son) if usl_son is not None else "N/A",
+                        "Recommended Galv. LSL": format_num(s_lsl) if isinstance(s_lsl, (int, float)) else s_lsl,
+                        "Recommended Galv. USL": format_num(s_usl) if isinstance(s_usl, (int, float)) else s_usl
                     }]
                     st.dataframe(pd.DataFrame(delta_data), hide_index=True, use_container_width=True)
 
-                    # 2. BIỂU ĐỒ DENSITY PLOT (SỬ DỤNG NORMAL FIT CHO MƯỢT MÀ)
-                    st.markdown("### 📈 Biểu đồ so sánh Phân phối Mật độ (Normal Distribution Fit)")
+                    # 2. DENSITY PLOT (SCALED TO COIL COUNT)
+                    st.markdown("### 📈 Normal Distribution Comparison")
                     fig_comp, ax_comp = plt.subplots(figsize=(10, 6))
                     
                     for label_name, vals, color in [
-                        (f"Galvanizing Line (Mạ)", vals_ma_full, '#1f77b4'),
-                        (f"Coating Line (Sơn)", vals_son_full, '#ff7f0e')
+                        (f"Galvanizing Line", vals_ma_full, '#1f77b4'),
+                        (f"Coating Line", vals_son_full, '#ff7f0e')
                     ]:
                         if len(vals) > 1 and vals.std() > 0:
                             mu_val = vals.mean()
                             sigma_val = vals.std(ddof=1)
                             
-                            # Vẽ phân phối chuẩn (Normal distribution curve) thay vì KDE
                             x_range = np.linspace(mu_val - 4*sigma_val, mu_val + 4*sigma_val, 500)
-                            y_vals = norm.pdf(x_range, mu_val, sigma_val)
+                            
+                            # Scale PDF to Coil Count
+                            bin_width = (vals.max() - vals.min()) / 20 if vals.max() > vals.min() else 1
+                            y_vals = norm.pdf(x_range, mu_val, sigma_val) * len(vals) * bin_width
                             
                             ax_comp.plot(x_range, y_vals, color=color, lw=3, label=label_name)
                             ax_comp.fill_between(x_range, y_vals, alpha=0.3, color=color)
-                            ax_comp.axvline(mu_val, color=color, linestyle='--', alpha=0.8) # Đường gióng Mean
+                            ax_comp.axvline(mu_val, color=color, linestyle='--', alpha=0.8) 
                     
-                    ax_comp.set_ylabel("Density (Mật độ)")
+                    ax_comp.set_ylabel("Coil Count")
                     ax_comp.set_xlabel(f"{selected_label} Value")
                     ax_comp.set_title(f"Process Shift Comparison: {selected_label} (Δ = {format_num(delta)})", pad=20)
                     ax_comp.legend(loc="upper right")
@@ -206,7 +204,7 @@ if uploaded_files:
                     st.download_button(label="📥 Download Comparison Chart", data=buf_comp, file_name=f"CrossLine_Comp_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
     # =========================================================================
-    # CHẾ ĐỘ 2: PHÂN TÍCH FILE ĐƠN (PROCESS, SPC, SUMMARY)
+    # MODE 2: SINGLE FILE ANALYSIS (PROCESS, SPC, SUMMARY)
     # =========================================================================
     else:
         selected_filename = st.sidebar.selectbox("📝 Select File to Analyze:", [f.name for f in uploaded_files])
@@ -217,10 +215,10 @@ if uploaded_files:
             df = df_raw.copy()
             
             is_coating_line = any("原始" in str(c) for c in df.columns)
-            line_choice = "Dây chuyền sơn phủ (Coating)" if is_coating_line else "Dây chuyền mạ (Galvanizing)"
+            line_choice = "Coating Line" if is_coating_line else "Galvanizing Line"
             
             st.sidebar.markdown("---")
-            st.sidebar.info(f"🏭 Tự động nhận diện:\n**{line_choice}**")
+            st.sidebar.info(f"🏭 Auto-detected:\n**{line_choice}**")
             st.sidebar.markdown("---")
             
             if "用途碼" in df_raw.columns:
@@ -231,7 +229,7 @@ if uploaded_files:
             available = [k for k, v in metrics_map.items() if find_data_col(df, v)]
             
             if not available: 
-                st.warning(f"⚠️ Không tìm thấy cột dữ liệu cơ tính trong file '{selected_filename}'. Vui lòng kiểm tra lại.")
+                st.warning(f"⚠️ Mechanical property data column not found in file '{selected_filename}'. Please check again.")
                 st.stop()
 
             if view_mode != "Executive Summary":
@@ -285,7 +283,7 @@ if uploaded_files:
                             if mask_out.any():
                                 ax_t.scatter(x_coords[mask_out], plot_data[mask_out], color="red", s=80, edgecolor="black", zorder=2, label="Out of Int. Limit")
 
-                            ax_t.axhline(mu, color="blue", ls="-", lw=2, label=f"Theoretical Value: {mu:.1f}")
+                            ax_t.axhline(mu, color="blue", ls="-", lw=2, label=f"Theoretical Mean: {mu:.1f}")
                             if cust_lsl: ax_t.axhline(cust_lsl, color="green", ls="-", lw=3, label="Cust LSL")
                             if cust_usl: ax_t.axhline(cust_usl, color="green", ls="-", lw=3, label="Cust USL")
                             if int_lsl: ax_t.axhline(int_lsl, color="red", ls="--", lw=3, label="Int LSL")
@@ -312,7 +310,11 @@ if uploaded_files:
                             ax_pdf = ax_d.twinx()
                             x_min_fit, x_max_fit = min(plot_data.min(), mu - 4*sigma_fixed), max(plot_data.max(), mu + 4*sigma_fixed)
                             xs = np.linspace(x_min_fit, x_max_fit, 500)
-                            ax_pdf.plot(xs, norm.pdf(xs, mu, sigma_fixed), color="#1E3A8A", lw=3, label="Normal Fit")
+                            
+                            # Scale PDF to Coil Count for visual harmony with Histogram
+                            bin_w = (plot_data.max() - plot_data.min()) / 20 if plot_data.max() > plot_data.min() else 1
+                            y_vals = norm.pdf(xs, mu, sigma_fixed) * n * bin_w
+                            ax_pdf.plot(xs, y_vals, color="#1E3A8A", lw=3, label="Normal Fit")
                             ax_pdf.set_yticks([])
                             
                             def add_vline_std(ax, val, color, ls, label, level=0):
@@ -322,7 +324,7 @@ if uploaded_files:
                                     y_pos = 1.02 + (level * 0.05) 
                                     ax.text(val, y_pos, f"{val:.1f}", color=color, ha='center', va='bottom', transform=trans, fontweight='bold')
 
-                            add_vline_std(ax_d, mu, "blue", "-", "Theoretical Value", 0)
+                            add_vline_std(ax_d, mu, "blue", "-", "Theoretical Mean", 0)
                             add_vline_std(ax_d, cust_lsl, "green", "-", "Cust LSL", 0)
                             add_vline_std(ax_d, cust_usl, "green", "-", "Cust USL", 0)
                             add_vline_std(ax_d, int_lsl, "red", "--", "Int LSL", 1)
@@ -349,7 +351,7 @@ if uploaded_files:
                         with col_r1:
                             st.write("**Method: Standard Deviation**")
                             st.table(pd.DataFrame({
-                                "Metric": ["N", "Max", "Min", "Theoretical Value", "Sigma", "LSL", "USL"],
+                                "Metric": ["N", "Max", "Min", "Theoretical Mean", "Sigma", "LSL", "USL"],
                                 "Value": [str(n), format_num(data_max), format_num(data_min), format_num(mu), format_num(sigma_fixed), format_num(mu - k_std*sigma_fixed), format_num(mu + k_std*sigma_fixed)]
                             }))
                         with col_r2:
@@ -361,7 +363,7 @@ if uploaded_files:
 
                         fig_imr, ax_i = plt.subplots(figsize=(12, 6))
                         ax_i.plot(plot_data, marker="o", color="#1f77b4", label="Actual Data", alpha=0.7)
-                        ax_i.axhline(mu, color="blue", ls="-", lw=2, label="Theoretical Value")
+                        ax_i.axhline(mu, color="blue", ls="-", lw=2, label="Theoretical Mean")
                         
                         if int_lsl: ax_i.axhline(int_lsl, color="red", ls="--", lw=2, label="Current Int LSL")
                         if int_usl: ax_i.axhline(int_usl, color="red", ls="--", lw=2, label="Current Int USL")
