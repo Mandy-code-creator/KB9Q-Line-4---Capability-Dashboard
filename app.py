@@ -2,10 +2,9 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 import re
-from scipy.stats import norm, gaussian_kde
+from scipy.stats import norm, ttest_ind, sem, t
 import io
 from docx import Document
 from docx.shared import Inches
@@ -97,10 +96,10 @@ if uploaded_files:
     ])
 
     # =========================================================================
-    # MODE 1: CROSS-LINE COMPARISON
+    # MODE 1: CROSS-LINE COMPARISON (STATISTICAL SHIFT ANALYSIS)
     # =========================================================================
     if view_mode == "Cross-Line Comparison 🔀":
-        st.title("🔀 Process Shift Analysis & Recommended Limits")
+        st.title("🔀 Statistical Process Shift & Limits Recommendation")
         
         if len(uploaded_files) < 2:
             st.warning("⚠️ Please upload at least 2 report files (e.g., 1 Galvanizing, 1 Coating) on the left sidebar to perform comparison.")
@@ -108,7 +107,7 @@ if uploaded_files:
             file_names = [f.name for f in uploaded_files]
             
             st.markdown("### 1. Assign Line Data")
-            st.info("Please select the correct report file for each line to calculate the shift (Δ = Coating - Galvanizing).")
+            st.info("Assign the correct file to each process to evaluate the statistical shift (Δ = Coating - Galvanizing) and generate optimal limits.")
             
             c1, c2, c3 = st.columns([2, 2, 1])
             with c1: ma_filename = st.selectbox("🏭 Select Galvanizing File:", file_names)
@@ -153,9 +152,9 @@ if uploaded_files:
                     s_lsl = (lsl_son - delta) if lsl_son is not None else "N/A"
                     s_usl = (usl_son - delta) if usl_son is not None else "N/A"
 
-                    # 1. DELTA TABLE
+                    # 1. DELTA & RECOMMENDATION TABLE
                     st.markdown("---")
-                    st.subheader(f"🔄 Recommended Galvanizing Limits ({selected_label})")
+                    st.subheader(f"🔄 Optimal Limits Recommendation ({selected_label})")
                     
                     delta_data = [{
                         "Parameter": selected_label,
@@ -169,39 +168,62 @@ if uploaded_files:
                     }]
                     st.dataframe(pd.DataFrame(delta_data), hide_index=True, use_container_width=True)
 
-                    # 2. DENSITY PLOT (SCALED TO COIL COUNT)
-                    st.markdown("### 📈 Normal Distribution Comparison")
+                    # 2. STATISTICAL SIGNIFICANCE (T-TEST)
+                    st.markdown("### 🔬 2-Sample T-Test (Statistical Significance)")
+                    
+                    # Perform T-Test (Welch's t-test assuming unequal variances)
+                    t_stat, p_val = ttest_ind(vals_son_full, vals_ma_full, equal_var=False)
+                    is_significant = "YES (Significant Shift)" if p_val < 0.05 else "NO (Random Variation)"
+                    color_status = "red" if p_val < 0.05 else "green"
+                    
+                    t_test_data = pd.DataFrame([{
+                        "Hypothesis Test": "Difference in Means (Coating - Galvanizing) ≠ 0",
+                        "T-Statistic": format_num(t_stat),
+                        "P-Value": f"{p_val:.4f}",
+                        "Statistically Significant? (<0.05)": is_significant
+                    }])
+                    st.table(t_test_data)
+                    
+                    st.caption(f"*Statistical Interpretation:* The P-Value indicates the probability that the observed shift (Δ = {format_num(delta)}) occurred by random chance. A value below 0.05 strongly proves that the Coating process structurally alters the {selected_label}.")
+
+                    # 3. INTERVAL PLOT (MINITAB STYLE)
+                    st.markdown("### 📈 95% Confidence Interval Plot for the Mean")
                     fig_comp, ax_comp = plt.subplots(figsize=(10, 6))
                     
-                    for label_name, vals, color in [
-                        (f"Galvanizing Line", vals_ma_full, '#1f77b4'),
-                        (f"Coating Line", vals_son_full, '#ff7f0e')
-                    ]:
-                        if len(vals) > 1 and vals.std() > 0:
-                            mu_val = vals.mean()
-                            sigma_val = vals.std(ddof=1)
-                            
-                            x_range = np.linspace(mu_val - 4*sigma_val, mu_val + 4*sigma_val, 500)
-                            
-                            # Scale PDF to Coil Count
-                            bin_width = (vals.max() - vals.min()) / 20 if vals.max() > vals.min() else 1
-                            y_vals = norm.pdf(x_range, mu_val, sigma_val) * len(vals) * bin_width
-                            
-                            ax_comp.plot(x_range, y_vals, color=color, lw=3, label=label_name)
-                            ax_comp.fill_between(x_range, y_vals, alpha=0.3, color=color)
-                            ax_comp.axvline(mu_val, color=color, linestyle='--', alpha=0.8) 
+                    labels = ["Galvanizing Line\n(Before)", "Coating Line\n(After)"]
+                    means = [mean_ma, mean_son]
                     
-                    ax_comp.set_ylabel("Coil Count")
-                    ax_comp.set_xlabel(f"{selected_label} Value")
-                    ax_comp.set_title(f"Process Shift Comparison: {selected_label} (Δ = {format_num(delta)})", pad=20)
-                    ax_comp.legend(loc="upper right")
+                    # Calculate 95% Confidence Intervals
+                    ci_ma = t.interval(0.95, len(vals_ma_full)-1, loc=mean_ma, scale=sem(vals_ma_full)) if len(vals_ma_full)>1 else (mean_ma, mean_ma)
+                    ci_son = t.interval(0.95, len(vals_son_full)-1, loc=mean_son, scale=sem(vals_son_full)) if len(vals_son_full)>1 else (mean_son, mean_son)
+                    
+                    # Error lengths for plotting
+                    err_ma = [[mean_ma - ci_ma[0]], [ci_ma[1] - mean_ma]]
+                    err_son = [[mean_son - ci_son[0]], [ci_son[1] - mean_son]]
+                    errors = np.hstack((err_ma, err_son))
+                    
+                    # Plot Interval Plot
+                    ax_comp.errorbar(labels, means, yerr=errors, fmt='-o', color='#1f77b4', 
+                                     ecolor='#ff7f0e', elinewidth=3, capsize=12, capthick=3, 
+                                     markersize=12, markerfacecolor='#1f77b4')
+                    
+                    # Plot Customization
+                    ax_comp.set_ylabel(f"{selected_label} Mean Value")
+                    ax_comp.set_title(f"Mean Shift & 95% CI: {selected_label} (Δ = {format_num(delta)})", pad=20)
+                    
+                    # Add data labels next to points
+                    for i, mean_val in enumerate(means):
+                        ax_comp.text(i + 0.05, mean_val, f"{mean_val:.1f}", va='center', fontweight='bold', fontsize=11)
+                    
+                    ax_comp.margins(x=0.5) # Add space around the points
+                    ax_comp.grid(axis='y', linestyle='--', alpha=0.7)
                     apply_full_border(ax_comp)
                     plt.tight_layout()
                     
                     st.pyplot(fig_comp)
                     
-                    buf_comp = export_to_word([fig_comp], [f"Cross-Line Density Comparison - {selected_label}"])
-                    st.download_button(label="📥 Download Comparison Chart", data=buf_comp, file_name=f"CrossLine_Comp_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+                    buf_comp = export_to_word([fig_comp], [f"Confidence Interval Plot - {selected_label}"])
+                    st.download_button(label="📥 Download Interval Chart", data=buf_comp, file_name=f"IntervalPlot_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
     # =========================================================================
     # MODE 2: SINGLE FILE ANALYSIS (PROCESS, SPC, SUMMARY)
@@ -311,7 +333,6 @@ if uploaded_files:
                             x_min_fit, x_max_fit = min(plot_data.min(), mu - 4*sigma_fixed), max(plot_data.max(), mu + 4*sigma_fixed)
                             xs = np.linspace(x_min_fit, x_max_fit, 500)
                             
-                            # Scale PDF to Coil Count for visual harmony with Histogram
                             bin_w = (plot_data.max() - plot_data.min()) / 20 if plot_data.max() > plot_data.min() else 1
                             y_vals = norm.pdf(xs, mu, sigma_fixed) * n * bin_w
                             ax_pdf.plot(xs, y_vals, color="#1E3A8A", lw=3, label="Normal Fit")
