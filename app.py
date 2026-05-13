@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 import re
-from scipy.stats import norm, gaussian_kde
+from scipy.stats import norm
 import io
 from docx import Document
 from docx.shared import Inches
@@ -137,9 +137,7 @@ if uploaded_files:
                     vals_ma_full = pd.to_numeric(df_ma[col_ma], errors='coerce').dropna()
                     vals_son_full = pd.to_numeric(df_son[col_son], errors='coerce').dropna()
 
-                    # ==========================================================
-                    # Lọc Grade A-B để tính Mean "Chuẩn" cho cả 2 chuyền
-                    # ==========================================================
+                    # Lọc Grade A-B để tính Mean "Chuẩn"
                     def get_theoretical_mean(df, data_col):
                         df_calc = df.dropna(subset=[data_col]).copy()
                         g_col = next((c for c in df.columns if any(kw in str(c).lower() for kw in ['grade', '等级', '等級', 'cấp', 'quality', 'loại'])), None)
@@ -175,8 +173,8 @@ if uploaded_files:
                     }]
                     st.dataframe(pd.DataFrame(delta_data), hide_index=True, use_container_width=True)
 
-                    # 2. BIỂU ĐỒ DENSITY PLOT CHUYÊN NGHIỆP
-                    st.markdown("### 📈 Biểu đồ so sánh Phân phối Mật độ (Density Plot)")
+                    # 2. BIỂU ĐỒ DENSITY PLOT (SỬ DỤNG NORMAL FIT CHO MƯỢT MÀ)
+                    st.markdown("### 📈 Biểu đồ so sánh Phân phối Mật độ (Normal Distribution Fit)")
                     fig_comp, ax_comp = plt.subplots(figsize=(10, 6))
                     
                     for label_name, vals, color in [
@@ -184,13 +182,16 @@ if uploaded_files:
                         (f"Coating Line (Sơn)", vals_son_full, '#ff7f0e')
                     ]:
                         if len(vals) > 1 and vals.std() > 0:
-                            kde = gaussian_kde(vals)
-                            x_range = np.linspace(vals.min() - 2*vals.std(), vals.max() + 2*vals.std(), 500)
-                            y_vals = kde(x_range)
+                            mu_val = vals.mean()
+                            sigma_val = vals.std(ddof=1)
+                            
+                            # Vẽ phân phối chuẩn (Normal distribution curve) thay vì KDE
+                            x_range = np.linspace(mu_val - 4*sigma_val, mu_val + 4*sigma_val, 500)
+                            y_vals = norm.pdf(x_range, mu_val, sigma_val)
                             
                             ax_comp.plot(x_range, y_vals, color=color, lw=3, label=label_name)
                             ax_comp.fill_between(x_range, y_vals, alpha=0.3, color=color)
-                            ax_comp.axvline(vals.mean(), color=color, linestyle='--', alpha=0.8) # Đường gióng Mean
+                            ax_comp.axvline(mu_val, color=color, linestyle='--', alpha=0.8) # Đường gióng Mean
                     
                     ax_comp.set_ylabel("Density (Mật độ)")
                     ax_comp.set_xlabel(f"{selected_label} Value")
@@ -205,7 +206,7 @@ if uploaded_files:
                     st.download_button(label="📥 Download Comparison Chart", data=buf_comp, file_name=f"CrossLine_Comp_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
     # =========================================================================
-    # CHẾ ĐỘ 2: PHÂN TÍCH FILE ĐƠN (NHƯ CŨ)
+    # CHẾ ĐỘ 2: PHÂN TÍCH FILE ĐƠN (PROCESS, SPC, SUMMARY)
     # =========================================================================
     else:
         selected_filename = st.sidebar.selectbox("📝 Select File to Analyze:", [f.name for f in uploaded_files])
