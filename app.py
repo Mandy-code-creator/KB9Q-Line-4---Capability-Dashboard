@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 import re
-from scipy.stats import norm
+from scipy.stats import norm, gaussian_kde
 import io
 from docx import Document
 from docx.shared import Inches
@@ -111,6 +111,7 @@ if uploaded_files:
             
             compare_data = {}
             summary_stats = []
+            fluctuation_data = [] # Lưu dữ liệu tính toán Delta
 
             for f in uploaded_files:
                 df_temp = load_and_clean_data(f)
@@ -120,6 +121,8 @@ if uploaded_files:
                 label_name = f"{line_type}\n({f.name})"
 
                 col = find_data_col(df_temp, short_key)
+                zh_key = zh_map_global.get(short_key, short_key)
+
                 if col:
                     vals = pd.to_numeric(df_temp[col], errors='coerce').dropna()
                     if not vals.empty:
@@ -132,39 +135,97 @@ if uploaded_files:
                             "Min": format_num(vals.min()),
                             "Max": format_num(vals.max())
                         })
+                
+                # TÍNH TOÁN BẢNG ĐỀ XUẤT CHO DÂY CHUYỀN SƠN NGAY TẠI ĐÂY
+                if is_coating:
+                    i_lsl = get_limit(df_temp, zh_key, "min", "管制")
+                    i_usl = get_limit(df_temp, zh_key, "max", "管制")
+                    
+                    search_keywords = {
+                        "YS": ["降伏", "原始"], "TS": ["抗拉", "原始"],
+                        "EL": ["伸長", "原始"], "HRB": ["硬度", "原始"]
+                    }
+                    target_kws = search_keywords.get(short_key, [])
+                    orig_col = None
+                    for c in df_temp.columns:
+                        if target_kws and all(kw in str(c) for kw in target_kws):
+                            orig_col = c
+                            break
+                    
+                    if orig_col and col:
+                        temp_df = df_temp[[orig_col, col]].copy()
+                        temp_df[orig_col] = pd.to_numeric(temp_df[orig_col], errors='coerce')
+                        temp_df[col] = pd.to_numeric(temp_df[col], errors='coerce')
+                        temp_df = temp_df.dropna()
+                        
+                        if not temp_df.empty:
+                            delta = temp_df[col] - temp_df[orig_col]
+                            delta_mean = delta.mean()
+                            
+                            s_lsl = (i_lsl - delta_mean) if i_lsl is not None else "Không có LSL Sơn"
+                            s_usl = (i_usl - delta_mean) if i_usl is not None else "Không có USL Sơn"
+                            
+                            fluctuation_data.append({
+                                "File (Line)": f.name,
+                                "Mẫu (N)": len(temp_df),
+                                "TB Trước Sơn": format_num(temp_df[orig_col].mean()),
+                                "TB Sau Sơn": format_num(temp_df[col].mean()),
+                                "Biến động (Δ)": format_num(delta_mean),
+                                "Đề xuất LSL Mạ": format_num(s_lsl) if isinstance(s_lsl, (int, float)) else s_lsl,
+                                "Đề xuất USL Mạ": format_num(s_usl) if isinstance(s_usl, (int, float)) else s_usl
+                            })
 
             if compare_data:
                 st.subheader(f"📊 Summary Statistics: {selected_label}")
                 st.dataframe(pd.DataFrame(summary_stats), hide_index=True, use_container_width=True)
 
-                st.subheader("📈 Distribution Comparison (Boxplot)")
+                # ==========================================================
+                # BIỂU ĐỒ DENSITY PLOT CHUYÊN NGHIỆP THAY THẾ BOXPLOT
+                # ==========================================================
+                st.subheader("📈 Distribution Density Comparison")
                 fig_comp, ax_comp = plt.subplots(figsize=(10, 6))
                 
-                data_values = list(compare_data.values())
-                data_labels = list(compare_data.keys())
+                colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
                 
-                box = ax_comp.boxplot(data_values, patch_artist=True, labels=data_labels)
+                for idx, (label_name, vals) in enumerate(compare_data.items()):
+                    if len(vals) > 1 and vals.std() > 0:
+                        color = colors[idx % len(colors)]
+                        # Tính toán đường cong phân phối (KDE)
+                        kde = gaussian_kde(vals)
+                        x_range = np.linspace(vals.min() - 2*vals.std(), vals.max() + 2*vals.std(), 500)
+                        y_vals = kde(x_range)
+                        
+                        # Vẽ đường nét liền
+                        ax_comp.plot(x_range, y_vals, color=color, lw=3, label=label_name.replace('\n', ' '))
+                        # Tô màu vùng dưới đường cong
+                        ax_comp.fill_between(x_range, y_vals, alpha=0.3, color=color)
                 
-                colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728'] * 5
-                for patch, color in zip(box['boxes'], colors):
-                    patch.set_facecolor(color)
-                    patch.set_alpha(0.6)
-                
-                ax_comp.set_ylabel(f"{selected_label} Value")
-                ax_comp.set_title(f"Comparison of {selected_label} across Production Lines", pad=20)
-                ax_comp.yaxis.grid(True, linestyle='--', alpha=0.7)
+                ax_comp.set_ylabel("Density (Mật độ)")
+                ax_comp.set_xlabel(f"{selected_label} Value")
+                ax_comp.set_title(f"Process Shift Comparison: {selected_label}", pad=20)
+                ax_comp.legend(loc="upper right")
                 apply_full_border(ax_comp)
                 plt.tight_layout()
                 
                 st.pyplot(fig_comp)
                 
-                buf_comp = export_to_word([fig_comp], [f"Cross-Line Comparison - {selected_label}"])
+                buf_comp = export_to_word([fig_comp], [f"Cross-Line Density Comparison - {selected_label}"])
                 st.download_button(label="📥 Download Comparison Chart", data=buf_comp, file_name=f"CrossLine_Comp_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+
+                # ==========================================================
+                # BẢNG ĐỀ XUẤT GIỚI HẠN DỜI TỪ VIEW 3 SANG ĐÂY
+                # ==========================================================
+                if fluctuation_data:
+                    st.markdown("---")
+                    st.subheader("🔄 Phân tích Biến động Cơ tính & Đề xuất giới hạn Mạ")
+                    st.info(f"Bảng dưới đây tính toán mức độ dao động cơ tính do quá trình Sơn (Δ = Sau Sơn - Trước Sơn). Dựa vào độ lệch này, hệ thống sẽ tính lùi lại giới hạn an toàn (LSL/USL) mà Dây chuyền Mạ cần đạt được để thành phẩm cuối cùng sau khi Sơn luôn nằm trong mức kiểm soát của chỉ tiêu **{selected_label}**.")
+                    st.dataframe(pd.DataFrame(fluctuation_data), hide_index=True, use_container_width=True)
+
             else:
                 st.error("Không tìm thấy dữ liệu hợp lệ để so sánh cho chỉ tiêu này.")
 
     # =========================================================================
-    # CÁC CHỨC NĂNG PHÂN TÍCH ĐƠN & EXECUTIVE SUMMARY
+    # CÁC CHỨC NĂNG PHÂN TÍCH ĐƠN (PROCESS & SPC & SUMMARY)
     # =========================================================================
     else:
         selected_filename = st.sidebar.selectbox("📝 Select File to Analyze:", [f.name for f in uploaded_files])
@@ -229,7 +290,6 @@ if uploaded_files:
                     st.title(f"📊 Quality Analytics: {selected_label} - {line_choice}")
 
                     if view_mode == "Process Analytics":
-                        # XÓA TAB SO SÁNH NHƯ YÊU CẦU
                         tab_trend, tab_dist = st.tabs(["📈 Trend Analysis", "📊 Distribution & SPC"])
                             
                         ucl_v1, lcl_v1 = mu + 3*sigma_fixed, mu - 3*sigma_fixed
@@ -343,7 +403,6 @@ if uploaded_files:
             elif view_mode == "Executive Summary":
                 st.title("📑 Executive Quality Summary")
                 summary_data = []
-                fluctuation_data = [] # Data cho bảng đề xuất Mạ
                 
                 for label in available:
                     short_key = metrics_map[label]
@@ -353,7 +412,6 @@ if uploaded_files:
                     if data_col:
                         p_data = pd.to_numeric(df[data_col], errors='coerce').dropna()
                         if len(p_data) == 0: continue
-                        
                         mu_v = p_data.mean()
                         sig_v = p_data.std(ddof=1)
                         i_lsl = get_limit(df, zh_key, "min", "管制")
@@ -382,52 +440,8 @@ if uploaded_files:
                         summary_data.append({"Parameter": label, "N": len(p_data), "Mean": format_num(mu_v), "StdDev (σ)": format_num(sig_v),
                                            "Int LSL": format_num(i_lsl), "Int USL": format_num(i_usl), "Cp": cp, "Ca": ca, "Cpk": cpk, 
                                            "Cpk Formula": formula, "Status": status})
-
-                        # TÍNH TOÁN DAO ĐỘNG (DELTA) ĐỂ ĐỀ XUẤT CHO DÂY CHUYỀN MẠ
-                        if line_choice == "Dây chuyền sơn phủ (Coating)":
-                            search_keywords = {
-                                "YS": ["降伏", "原始"], "TS": ["抗拉", "原始"],
-                                "EL": ["伸長", "原始"], "HRB": ["硬度", "原始"]
-                            }
-                            target_kws = search_keywords.get(short_key, [])
-                            orig_col = None
-                            for c in df.columns:
-                                if target_kws and all(kw in str(c) for kw in target_kws):
-                                    orig_col = c
-                                    break
-                            
-                            if orig_col:
-                                temp_df = df[[orig_col, data_col]].copy()
-                                temp_df[orig_col] = pd.to_numeric(temp_df[orig_col], errors='coerce')
-                                temp_df[data_col] = pd.to_numeric(temp_df[data_col], errors='coerce')
-                                temp_df = temp_df.dropna()
-                                
-                                if not temp_df.empty:
-                                    delta = temp_df[data_col] - temp_df[orig_col]
-                                    delta_mean = delta.mean()
-                                    
-                                    # Lấy LSL và USL của lớp Sơn để bù trừ ngược ra giới hạn Mạ
-                                    s_lsl = (i_lsl - delta_mean) if i_lsl is not None else None
-                                    s_usl = (i_usl - delta_mean) if i_usl is not None else None
-                                    
-                                    fluctuation_data.append({
-                                        "Parameter": label,
-                                        "Mẫu (N)": len(temp_df),
-                                        "TB Trước Sơn": format_num(temp_df[orig_col].mean()),
-                                        "TB Sau Sơn": format_num(temp_df[data_col].mean()),
-                                        "Biến động (Δ)": format_num(delta_mean),
-                                        "Đề xuất LSL Mạ": format_num(s_lsl),
-                                        "Đề xuất USL Mạ": format_num(s_usl)
-                                    })
                 
                 st.dataframe(pd.DataFrame(summary_data), hide_index=True, use_container_width=True)
-
-                # HIỂN THỊ BẢNG ĐỀ XUẤT (NẾU LÀ DÂY CHUYỀN SƠN)
-                if line_choice == "Dây chuyền sơn phủ (Coating)" and fluctuation_data:
-                    st.markdown("---")
-                    st.subheader("🔄 Biến động Cơ tính & Đề xuất tối ưu cho Dây chuyền Mạ")
-                    st.info("Bảng dưới đây tính toán mức thay đổi cơ tính do quá trình Sơn (Δ = Sau Sơn - Trước Sơn). Dựa vào độ lệch này, hệ thống sẽ tính lùi lại giới hạn an toàn (LSL/USL) mà Dây chuyền Mạ cần đạt được để đảm bảo thành phẩm cuối cùng sau khi Sơn luôn nằm trong mức kiểm soát.")
-                    st.dataframe(pd.DataFrame(fluctuation_data), hide_index=True, use_container_width=True)
 
         except Exception as e:
             st.error(f"System Error: {e}")
