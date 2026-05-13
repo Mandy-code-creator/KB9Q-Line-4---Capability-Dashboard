@@ -273,7 +273,9 @@ if uploaded_files:
                             sig_v = p_data.std(ddof=1)
                             i_lsl = get_limit(df, zh_key, "min", "管制")
                             i_usl = get_limit(df, zh_key, "max", "管制")
-                            
+                            # 👇 [THÊM MỚI TẠI ĐÂY] Ép giới hạn LSL = 4.0 cho YPE của chuyền Sơn
+                            if is_coating_line and short_key == "YPE":
+                                i_lsl = 4.0
                             cp, ca, cpk, formula, status = "-", "-", "-", "-", "N/A"
                             cpk_val = None
                             if sig_v > 0:
@@ -311,7 +313,11 @@ if uploaded_files:
                         int_usl = get_limit(df, zh_key, "max", "管制")
                         cust_lsl = get_limit(df, zh_key, "min", "客戶要求")
                         cust_usl = get_limit(df, zh_key, "max", "客戶要求")
-
+                        # 👇 CHÈN ĐOẠN NÀY VÀO ĐÂY (Khoảng dòng 167)
+                        # Ép giới hạn nội bộ LSL = 4.0 cho YPE của dây chuyền Sơn phủ
+                        if is_coating_line and short_key == "YPE":
+                            int_lsl = 4.0
+                        # 👆 -----------------------------------------------------------
                         if data_col:
                             temp_df = df.copy()
                             temp_df[data_col] = pd.to_numeric(temp_df[data_col], errors='coerce')
