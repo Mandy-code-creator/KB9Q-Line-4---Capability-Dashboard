@@ -14,8 +14,8 @@ from docx.shared import Inches
 # ==========================================
 st.set_page_config(page_title="Line 4 Quality Analytics", layout="wide")
 
-# Thiết lập font hỗ trợ tiếng Trung để không bị lỗi ô vuông (▯▯) ở Legend
-plt.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei', 'Arial Unicode MS', 'sans-serif']
+# Thiết lập font an toàn, loại bỏ font tiếng Trung để tránh lỗi ô vuông (▯▯)
+plt.rcParams['font.sans-serif'] = ['Arial', 'Helvetica', 'sans-serif']
 plt.rcParams['axes.unicode_minus'] = False
 
 plt.rcParams.update({
@@ -130,9 +130,6 @@ if uploaded_files:
             cust_usl = get_limit(df, zh_key, "max", "客戶要求")
 
             if data_col:
-                # =================================================================
-                # THUẬT TOÁN QUÉT TỪ KHÓA BẤT BIẾN (TÌM CỘT 原始)
-                # =================================================================
                 orig_col = None
                 if line_choice == "Dây chuyền sơn phủ (Coating)":
                     search_keywords = {
@@ -143,7 +140,6 @@ if uploaded_files:
                     }
                     target_kws = search_keywords.get(short_key, [])
                     for c in df.columns:
-                        # Chỉ cần tên cột CHỨA đủ các từ khóa là lụm luôn
                         if target_kws and all(kw in str(c) for kw in target_kws):
                             orig_col = c
                             break
@@ -245,15 +241,20 @@ if uploaded_files:
                     if line_choice == "Dây chuyền sơn phủ (Coating)":
                         with tab_compare:
                             if orig_col is None:
-                                st.error(f"❌ Không tìm thấy cột chứa dữ liệu (原始) cho {selected_label}.")
-                                st.info(f"👉 Danh sách cột hiện có: {', '.join(df.columns.tolist()[:20])}...")
-                            elif plot_data_orig is not None and plot_data_orig.isna().all():
-                                st.warning(f"⚠️ Đã tìm thấy cột '{orig_col}' nhưng toàn bộ dữ liệu bên trong bị rỗng.")
+                                st.error(f"❌ Không tìm thấy dữ liệu trước sơn phủ cho {selected_label}.")
                             else:
+                                # Chú thích rõ ràng hai cột đang được dùng để so sánh
+                                st.caption(f"🔍 Dữ liệu đang hiển thị: **{orig_col}** ➔ **{data_col}**")
+                                
                                 fig_c, ax_c = plt.subplots(figsize=(12, 6))
                                 x_coords = np.arange(1, n+1)
                                 
-                                ax_c.plot(x_coords, plot_data_orig, marker="s", markersize=5, color="#808080", ls="--", label="Before Coating (原始)", alpha=0.7)
+                                # FIX LỖI: Lọc bỏ các giá trị NaN để các điểm kết nối thành một đường liền mạch
+                                valid_orig = plot_data_orig.dropna()
+                                if not valid_orig.empty:
+                                    # Sử dụng index thực tế cộng 1 để khớp vị trí trên trục X
+                                    ax_c.plot(valid_orig.index + 1, valid_orig, marker="s", markersize=5, color="#808080", ls="--", label="Before Coating", alpha=0.7)
+                                
                                 ax_c.plot(x_coords, plot_data, marker="o", markersize=6, color="#1f77b4", label="After Coating", zorder=3)
                                 
                                 if int_lsl: ax_c.axhline(int_lsl, color="red", ls="--", lw=2, label="Int LSL")
