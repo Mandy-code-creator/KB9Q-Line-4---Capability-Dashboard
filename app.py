@@ -184,7 +184,7 @@ if uploaded_files:
                     st.caption(f"*Interpretation:* A P-Value < 0.05 proves the Coating process structurally alters the {selected_label}.")
 
                     st.markdown("#### 📈 Process Shift Distribution")
-                    fig_comp, ax_comp = plt.subplots(figsize=(12, 6)) # Khôi phục tỷ lệ chuẩn 12x6
+                    fig_comp, ax_comp = plt.subplots(figsize=(12, 6))
                     
                     for label_name, vals, color in [
                         (f"Galvanizing Line", vals_ma_full, '#1f77b4'),
@@ -331,12 +331,11 @@ if uploaded_files:
                             sigma_fixed = calc_data.std(ddof=1)
 
                             if view_mode == "Process Analytics":
-                                # KHÔI PHỤC THIẾT KẾ SUB-TABS THAY VÌ SỬ DỤNG CỘT (COLUMNS) NẰM NGANG
                                 tab_trend, tab_dist = st.tabs([f"📈 {selected_label} Trend", f"📊 {selected_label} Distribution"])
                                 ucl_v1, lcl_v1 = mu + 3*sigma_fixed, mu - 3*sigma_fixed
 
                                 with tab_trend:
-                                    fig_t, ax_t = plt.subplots(figsize=(12, 6)) # Tỷ lệ chuẩn
+                                    fig_t, ax_t = plt.subplots(figsize=(12, 6))
                                     x_coords = np.arange(1, n+1)
                                     ax_t.plot(x_coords, plot_data, marker="o", markersize=6, color="#1f77b4", label="Actual Value", zorder=1)
                                     
@@ -364,7 +363,7 @@ if uploaded_files:
                                     st.download_button(label=f"📥 Download Trend Chart ({selected_label})", data=buf_t, file_name=f"Trend_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_trend_{fname}_{selected_label}")
 
                                 with tab_dist:
-                                    fig_d, ax_d = plt.subplots(figsize=(12, 6)) # Tỷ lệ chuẩn
+                                    fig_d, ax_d = plt.subplots(figsize=(12, 6))
                                     ax_d.hist(plot_data, bins=20, density=False, alpha=0.4, color="#7FB3D5", edgecolor="black")
                                     ax_d.yaxis.set_major_locator(MaxNLocator(integer=True))
                                     ax_d.set_xlabel(f"{selected_label} Value")
@@ -386,9 +385,14 @@ if uploaded_files:
                                             y_pos = 1.02 + (level * 0.05) 
                                             ax.text(val, y_pos, f"{val:.1f}", color=color, ha='center', va='bottom', transform=trans, fontweight='bold')
 
+                                    # THÊM LẠI ĐẦY ĐỦ CÁC ĐƯỜNG GIỚI HẠN VÀ KIỂM SOÁT
                                     add_vline_std(ax_d, mu, "blue", "-", "Mean", 0)
+                                    add_vline_std(ax_d, cust_lsl, "green", "-", "Cust LSL", 0)
+                                    add_vline_std(ax_d, cust_usl, "green", "-", "Cust USL", 0)
                                     add_vline_std(ax_d, int_lsl, "red", "--", "Int LSL", 1)
                                     add_vline_std(ax_d, int_usl, "red", "--", "Int USL", 1)
+                                    add_vline_std(ax_d, ucl_v1, "#6A0DAD", ":", "3σ UCL", 2) 
+                                    add_vline_std(ax_d, lcl_v1, "#6A0DAD", ":", "3σ LCL", 2) 
                                     
                                     ax_d.set_title(f"{selected_label} Distribution (N={n})", pad=55)
                                     ax_d.legend(loc="upper left", bbox_to_anchor=(1, 1))
@@ -417,7 +421,7 @@ if uploaded_files:
                                         "Value": [str(n), format_num(iqr_val), str(k_iqr), format_num(iqr_lsl), format_num(iqr_usl)]
                                     }))
 
-                                fig_imr, ax_i = plt.subplots(figsize=(12, 6)) # Tỷ lệ chuẩn
+                                fig_imr, ax_i = plt.subplots(figsize=(12, 6)) 
                                 ax_i.plot(plot_data, marker="o", color="#1f77b4", label="Actual Data", alpha=0.7)
                                 ax_i.axhline(mu, color="blue", ls="-", lw=2, label="Theoretical Mean")
                                 
