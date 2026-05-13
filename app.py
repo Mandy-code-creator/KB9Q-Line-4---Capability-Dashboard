@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 import re
-from scipy.stats import norm, ttest_ind, sem, t
+from scipy.stats import norm, ttest_ind
 import io
 from docx import Document
 from docx.shared import Inches
@@ -171,10 +171,8 @@ if uploaded_files:
                     # 2. STATISTICAL SIGNIFICANCE (T-TEST)
                     st.markdown("### 🔬 2-Sample T-Test (Statistical Significance)")
                     
-                    # Perform T-Test (Welch's t-test assuming unequal variances)
                     t_stat, p_val = ttest_ind(vals_son_full, vals_ma_full, equal_var=False)
                     is_significant = "YES (Significant Shift)" if p_val < 0.05 else "NO (Random Variation)"
-                    color_status = "red" if p_val < 0.05 else "green"
                     
                     t_test_data = pd.DataFrame([{
                         "Hypothesis Test": "Difference in Means (Coating - Galvanizing) ≠ 0",
@@ -186,44 +184,37 @@ if uploaded_files:
                     
                     st.caption(f"*Statistical Interpretation:* The P-Value indicates the probability that the observed shift (Δ = {format_num(delta)}) occurred by random chance. A value below 0.05 strongly proves that the Coating process structurally alters the {selected_label}.")
 
-                    # 3. INTERVAL PLOT (MINITAB STYLE)
-                    st.markdown("### 📈 95% Confidence Interval Plot for the Mean")
+                    # 3. OVERLAID NORMAL DISTRIBUTION PLOT (THE SPC STANDARD)
+                    st.markdown("### 📈 Process Shift Distribution (Normal Fit)")
                     fig_comp, ax_comp = plt.subplots(figsize=(10, 6))
                     
-                    labels = ["Galvanizing Line\n(Before)", "Coating Line\n(After)"]
-                    means = [mean_ma, mean_son]
+                    for label_name, vals, color in [
+                        (f"Galvanizing Line (Before)", vals_ma_full, '#1f77b4'),
+                        (f"Coating Line (After)", vals_son_full, '#ff7f0e')
+                    ]:
+                        if len(vals) > 1 and vals.std() > 0:
+                            mu_val = vals.mean()
+                            sigma_val = vals.std(ddof=1)
+                            
+                            # Generate smooth bell curve
+                            x_range = np.linspace(mu_val - 4*sigma_val, mu_val + 4*sigma_val, 500)
+                            y_vals = norm.pdf(x_range, mu_val, sigma_val)
+                            
+                            ax_comp.plot(x_range, y_vals, color=color, lw=3, label=label_name)
+                            ax_comp.fill_between(x_range, y_vals, alpha=0.3, color=color)
+                            ax_comp.axvline(mu_val, color=color, linestyle='--', alpha=0.8) # Mean line
                     
-                    # Calculate 95% Confidence Intervals
-                    ci_ma = t.interval(0.95, len(vals_ma_full)-1, loc=mean_ma, scale=sem(vals_ma_full)) if len(vals_ma_full)>1 else (mean_ma, mean_ma)
-                    ci_son = t.interval(0.95, len(vals_son_full)-1, loc=mean_son, scale=sem(vals_son_full)) if len(vals_son_full)>1 else (mean_son, mean_son)
-                    
-                    # Error lengths for plotting
-                    err_ma = [[mean_ma - ci_ma[0]], [ci_ma[1] - mean_ma]]
-                    err_son = [[mean_son - ci_son[0]], [ci_son[1] - mean_son]]
-                    errors = np.hstack((err_ma, err_son))
-                    
-                    # Plot Interval Plot
-                    ax_comp.errorbar(labels, means, yerr=errors, fmt='-o', color='#1f77b4', 
-                                     ecolor='#ff7f0e', elinewidth=3, capsize=12, capthick=3, 
-                                     markersize=12, markerfacecolor='#1f77b4')
-                    
-                    # Plot Customization
-                    ax_comp.set_ylabel(f"{selected_label} Mean Value")
-                    ax_comp.set_title(f"Mean Shift & 95% CI: {selected_label} (Δ = {format_num(delta)})", pad=20)
-                    
-                    # Add data labels next to points
-                    for i, mean_val in enumerate(means):
-                        ax_comp.text(i + 0.05, mean_val, f"{mean_val:.1f}", va='center', fontweight='bold', fontsize=11)
-                    
-                    ax_comp.margins(x=0.5) # Add space around the points
-                    ax_comp.grid(axis='y', linestyle='--', alpha=0.7)
+                    ax_comp.set_ylabel("Probability Density")
+                    ax_comp.set_xlabel(f"{selected_label} Value")
+                    ax_comp.set_title(f"Process Shift Comparison: {selected_label} (Δ = {format_num(delta)})", pad=20)
+                    ax_comp.legend(loc="upper right")
                     apply_full_border(ax_comp)
                     plt.tight_layout()
                     
                     st.pyplot(fig_comp)
                     
-                    buf_comp = export_to_word([fig_comp], [f"Confidence Interval Plot - {selected_label}"])
-                    st.download_button(label="📥 Download Interval Chart", data=buf_comp, file_name=f"IntervalPlot_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+                    buf_comp = export_to_word([fig_comp], [f"Distribution Shift Chart - {selected_label}"])
+                    st.download_button(label="📥 Download Distribution Chart", data=buf_comp, file_name=f"ShiftPlot_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
     # =========================================================================
     # MODE 2: SINGLE FILE ANALYSIS (PROCESS, SPC, SUMMARY)
