@@ -14,7 +14,6 @@ from docx.shared import Inches
 # ==========================================
 st.set_page_config(page_title="Line 4 Quality Analytics", layout="wide")
 
-# Thiết lập font an toàn, tránh lỗi ô vuông
 plt.rcParams['font.sans-serif'] = ['Arial', 'Helvetica', 'sans-serif']
 plt.rcParams['axes.unicode_minus'] = False
 
@@ -86,7 +85,6 @@ st.sidebar.header("📂 DATA SOURCE")
 uploaded_files = st.sidebar.file_uploader("Upload Excel/CSV Reports", type=["xlsx", "csv", "xls"], accept_multiple_files=True)
 
 if uploaded_files:
-    # Biến map chung để dùng cho cả tính năng
     metrics_map = {"YS": "YS", "TS": "TS", "EL": "EL", "Hardness": "HRB", "YPE": "YPE"}
     zh_map_global = {"YS": "降伏強度", "TS": "抗拉強度", "EL": "伸長率", "HRB": "硬度", "YPE": "YPE"}
 
@@ -98,134 +96,116 @@ if uploaded_files:
     ])
 
     # =========================================================================
-    # TÍNH NĂNG: SO SÁNH CHÉO GIỮA CÁC DÂY CHUYỀN
+    # CHẾ ĐỘ 1: SO SÁNH CHÉO 2 FILE (MẠ vs SƠN)
     # =========================================================================
     if view_mode == "Cross-Line Comparison 🔀":
-        st.title("🔀 Cross-Line Mechanical Properties Comparison")
+        st.title("🔀 Phân tích Biến động & Đề xuất Giới hạn (Cross-Line)")
+        
         if len(uploaded_files) < 2:
-            st.warning("⚠️ Vui lòng Upload ít nhất 2 file (Ví dụ: 1 file Mạ, 1 file Sơn) ở thanh bên trái để thực hiện so sánh.")
+            st.warning("⚠️ Vui lòng Upload ít nhất 2 file báo cáo (1 file Mạ, 1 file Sơn) ở thanh bên trái để thực hiện so sánh.")
         else:
-            st.info(f"Đang so sánh dữ liệu từ **{len(uploaded_files)}** file báo cáo.")
-            selected_label = st.selectbox("Select Parameter to Compare:", list(metrics_map.keys()))
-            short_key = metrics_map[selected_label]
+            file_names = [f.name for f in uploaded_files]
             
-            compare_data = {}
-            summary_stats = []
-            fluctuation_data = [] # Lưu dữ liệu tính toán Delta
+            st.markdown("### 1. Chỉ định Dữ liệu Dây chuyền")
+            st.info("Vui lòng chọn đúng File báo cáo của từng dây chuyền để hệ thống tính toán độ lệch (Δ = Sơn - Mạ).")
+            
+            c1, c2, c3 = st.columns([2, 2, 1])
+            with c1: ma_filename = st.selectbox("🏭 Chọn File Dây chuyền Mạ (Galvanizing):", file_names)
+            with c2: son_filename = st.selectbox("🏭 Chọn File Dây chuyền Sơn (Coating):", file_names, index=1)
+            with c3: selected_label = st.selectbox("Chỉ tiêu:", list(metrics_map.keys()))
 
-            for f in uploaded_files:
-                df_temp = load_and_clean_data(f)
-                
-                is_coating = any("原始" in str(c) for c in df_temp.columns)
-                line_type = "Coating" if is_coating else "Galvanizing"
-                label_name = f"{line_type}\n({f.name})"
-
-                col = find_data_col(df_temp, short_key)
+            if ma_filename == son_filename:
+                st.error("❌ Bạn đang chọn cùng 1 file cho cả 2 dây chuyền. Vui lòng chọn 2 file khác nhau.")
+            else:
+                short_key = metrics_map[selected_label]
                 zh_key = zh_map_global.get(short_key, short_key)
 
-                if col:
-                    vals = pd.to_numeric(df_temp[col], errors='coerce').dropna()
-                    if not vals.empty:
-                        compare_data[label_name] = vals
-                        summary_stats.append({
-                            "File / Line": label_name.replace('\n', ' '),
-                            "N": len(vals),
-                            "Mean": format_num(vals.mean()),
-                            "StdDev (σ)": format_num(vals.std(ddof=1)),
-                            "Min": format_num(vals.min()),
-                            "Max": format_num(vals.max())
-                        })
+                # Đọc File Mạ
+                file_ma = next(f for f in uploaded_files if f.name == ma_filename)
+                df_ma = load_and_clean_data(file_ma)
+                col_ma = find_data_col(df_ma, short_key)
                 
-                # TÍNH TOÁN BẢNG ĐỀ XUẤT CHO DÂY CHUYỀN SƠN NGAY TẠI ĐÂY
-                if is_coating:
-                    i_lsl = get_limit(df_temp, zh_key, "min", "管制")
-                    i_usl = get_limit(df_temp, zh_key, "max", "管制")
-                    
-                    search_keywords = {
-                        "YS": ["降伏", "原始"], "TS": ["抗拉", "原始"],
-                        "EL": ["伸長", "原始"], "HRB": ["硬度", "原始"]
-                    }
-                    target_kws = search_keywords.get(short_key, [])
-                    orig_col = None
-                    for c in df_temp.columns:
-                        if target_kws and all(kw in str(c) for kw in target_kws):
-                            orig_col = c
-                            break
-                    
-                    if orig_col and col:
-                        temp_df = df_temp[[orig_col, col]].copy()
-                        temp_df[orig_col] = pd.to_numeric(temp_df[orig_col], errors='coerce')
-                        temp_df[col] = pd.to_numeric(temp_df[col], errors='coerce')
-                        temp_df = temp_df.dropna()
-                        
-                        if not temp_df.empty:
-                            delta = temp_df[col] - temp_df[orig_col]
-                            delta_mean = delta.mean()
-                            
-                            s_lsl = (i_lsl - delta_mean) if i_lsl is not None else "Không có LSL Sơn"
-                            s_usl = (i_usl - delta_mean) if i_usl is not None else "Không có USL Sơn"
-                            
-                            fluctuation_data.append({
-                                "File (Line)": f.name,
-                                "Mẫu (N)": len(temp_df),
-                                "TB Trước Sơn": format_num(temp_df[orig_col].mean()),
-                                "TB Sau Sơn": format_num(temp_df[col].mean()),
-                                "Biến động (Δ)": format_num(delta_mean),
-                                "Đề xuất LSL Mạ": format_num(s_lsl) if isinstance(s_lsl, (int, float)) else s_lsl,
-                                "Đề xuất USL Mạ": format_num(s_usl) if isinstance(s_usl, (int, float)) else s_usl
-                            })
+                # Đọc File Sơn
+                file_son = next(f for f in uploaded_files if f.name == son_filename)
+                df_son = load_and_clean_data(file_son)
+                col_son = find_data_col(df_son, short_key)
 
-            if compare_data:
-                st.subheader(f"📊 Summary Statistics: {selected_label}")
-                st.dataframe(pd.DataFrame(summary_stats), hide_index=True, use_container_width=True)
+                if not col_ma or not col_son:
+                    st.error("❌ Không tìm thấy cột dữ liệu tương ứng trong một hoặc cả hai file đã chọn.")
+                else:
+                    # Lấy dữ liệu thuần để vẽ biểu đồ
+                    vals_ma_full = pd.to_numeric(df_ma[col_ma], errors='coerce').dropna()
+                    vals_son_full = pd.to_numeric(df_son[col_son], errors='coerce').dropna()
 
-                # ==========================================================
-                # BIỂU ĐỒ DENSITY PLOT CHUYÊN NGHIỆP THAY THẾ BOXPLOT
-                # ==========================================================
-                st.subheader("📈 Distribution Density Comparison")
-                fig_comp, ax_comp = plt.subplots(figsize=(10, 6))
-                
-                colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
-                
-                for idx, (label_name, vals) in enumerate(compare_data.items()):
-                    if len(vals) > 1 and vals.std() > 0:
-                        color = colors[idx % len(colors)]
-                        # Tính toán đường cong phân phối (KDE)
-                        kde = gaussian_kde(vals)
-                        x_range = np.linspace(vals.min() - 2*vals.std(), vals.max() + 2*vals.std(), 500)
-                        y_vals = kde(x_range)
-                        
-                        # Vẽ đường nét liền
-                        ax_comp.plot(x_range, y_vals, color=color, lw=3, label=label_name.replace('\n', ' '))
-                        # Tô màu vùng dưới đường cong
-                        ax_comp.fill_between(x_range, y_vals, alpha=0.3, color=color)
-                
-                ax_comp.set_ylabel("Density (Mật độ)")
-                ax_comp.set_xlabel(f"{selected_label} Value")
-                ax_comp.set_title(f"Process Shift Comparison: {selected_label}", pad=20)
-                ax_comp.legend(loc="upper right")
-                apply_full_border(ax_comp)
-                plt.tight_layout()
-                
-                st.pyplot(fig_comp)
-                
-                buf_comp = export_to_word([fig_comp], [f"Cross-Line Density Comparison - {selected_label}"])
-                st.download_button(label="📥 Download Comparison Chart", data=buf_comp, file_name=f"CrossLine_Comp_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+                    # ==========================================================
+                    # Lọc Grade A-B để tính Mean "Chuẩn" cho cả 2 chuyền
+                    # ==========================================================
+                    def get_theoretical_mean(df, data_col):
+                        df_calc = df.dropna(subset=[data_col]).copy()
+                        g_col = next((c for c in df.columns if any(kw in str(c).lower() for kw in ['grade', '等级', '等級', 'cấp', 'quality', 'loại'])), None)
+                        if g_col:
+                            f_df = df_calc[df_calc[g_col].astype(str).str.upper().str.contains(r'A|B', regex=True, na=False)]
+                            if not f_df.empty: df_calc = f_df
+                        return df_calc[data_col].mean()
 
-                # ==========================================================
-                # BẢNG ĐỀ XUẤT GIỚI HẠN DỜI TỪ VIEW 3 SANG ĐÂY
-                # ==========================================================
-                if fluctuation_data:
+                    mean_ma = get_theoretical_mean(df_ma, col_ma)
+                    mean_son = get_theoretical_mean(df_son, col_son)
+                    delta = mean_son - mean_ma
+
+                    # Lấy LSL/USL của file Sơn để tính lùi
+                    lsl_son = get_limit(df_son, zh_key, "min", "管制")
+                    usl_son = get_limit(df_son, zh_key, "max", "管制")
+
+                    s_lsl = (lsl_son - delta) if lsl_son is not None else "N/A"
+                    s_usl = (usl_son - delta) if usl_son is not None else "N/A"
+
+                    # 1. BẢNG ĐỀ XUẤT DELTA
                     st.markdown("---")
-                    st.subheader("🔄 Phân tích Biến động Cơ tính & Đề xuất giới hạn Mạ")
-                    st.info(f"Bảng dưới đây tính toán mức độ dao động cơ tính do quá trình Sơn (Δ = Sau Sơn - Trước Sơn). Dựa vào độ lệch này, hệ thống sẽ tính lùi lại giới hạn an toàn (LSL/USL) mà Dây chuyền Mạ cần đạt được để thành phẩm cuối cùng sau khi Sơn luôn nằm trong mức kiểm soát của chỉ tiêu **{selected_label}**.")
-                    st.dataframe(pd.DataFrame(fluctuation_data), hide_index=True, use_container_width=True)
+                    st.subheader(f"🔄 Bảng Đề xuất Giới hạn Mạ ({selected_label})")
+                    
+                    delta_data = [{
+                        "Thông số": selected_label,
+                        "TB Mạ (Lý thuyết)": format_num(mean_ma),
+                        "TB Sơn (Lý thuyết)": format_num(mean_son),
+                        "Biến động (Δ)": format_num(delta),
+                        "LSL Sơn hiện tại": format_num(lsl_son) if lsl_son is not None else "N/A",
+                        "USL Sơn hiện tại": format_num(usl_son) if usl_son is not None else "N/A",
+                        "Đề xuất LSL Mạ": format_num(s_lsl) if isinstance(s_lsl, (int, float)) else s_lsl,
+                        "Đề xuất USL Mạ": format_num(s_usl) if isinstance(s_usl, (int, float)) else s_usl
+                    }]
+                    st.dataframe(pd.DataFrame(delta_data), hide_index=True, use_container_width=True)
 
-            else:
-                st.error("Không tìm thấy dữ liệu hợp lệ để so sánh cho chỉ tiêu này.")
+                    # 2. BIỂU ĐỒ DENSITY PLOT CHUYÊN NGHIỆP
+                    st.markdown("### 📈 Biểu đồ so sánh Phân phối Mật độ (Density Plot)")
+                    fig_comp, ax_comp = plt.subplots(figsize=(10, 6))
+                    
+                    for label_name, vals, color in [
+                        (f"Galvanizing Line (Mạ)", vals_ma_full, '#1f77b4'),
+                        (f"Coating Line (Sơn)", vals_son_full, '#ff7f0e')
+                    ]:
+                        if len(vals) > 1 and vals.std() > 0:
+                            kde = gaussian_kde(vals)
+                            x_range = np.linspace(vals.min() - 2*vals.std(), vals.max() + 2*vals.std(), 500)
+                            y_vals = kde(x_range)
+                            
+                            ax_comp.plot(x_range, y_vals, color=color, lw=3, label=label_name)
+                            ax_comp.fill_between(x_range, y_vals, alpha=0.3, color=color)
+                            ax_comp.axvline(vals.mean(), color=color, linestyle='--', alpha=0.8) # Đường gióng Mean
+                    
+                    ax_comp.set_ylabel("Density (Mật độ)")
+                    ax_comp.set_xlabel(f"{selected_label} Value")
+                    ax_comp.set_title(f"Process Shift Comparison: {selected_label} (Δ = {format_num(delta)})", pad=20)
+                    ax_comp.legend(loc="upper right")
+                    apply_full_border(ax_comp)
+                    plt.tight_layout()
+                    
+                    st.pyplot(fig_comp)
+                    
+                    buf_comp = export_to_word([fig_comp], [f"Cross-Line Density Comparison - {selected_label}"])
+                    st.download_button(label="📥 Download Comparison Chart", data=buf_comp, file_name=f"CrossLine_Comp_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
     # =========================================================================
-    # CÁC CHỨC NĂNG PHÂN TÍCH ĐƠN (PROCESS & SPC & SUMMARY)
+    # CHẾ ĐỘ 2: PHÂN TÍCH FILE ĐƠN (NHƯ CŨ)
     # =========================================================================
     else:
         selected_filename = st.sidebar.selectbox("📝 Select File to Analyze:", [f.name for f in uploaded_files])
@@ -235,7 +215,6 @@ if uploaded_files:
             df_raw = load_and_clean_data(uploaded_file)
             df = df_raw.copy()
             
-            # TỰ ĐỘNG NHẬN DIỆN DÂY CHUYỀN
             is_coating_line = any("原始" in str(c) for c in df.columns)
             line_choice = "Dây chuyền sơn phủ (Coating)" if is_coating_line else "Dây chuyền mạ (Galvanizing)"
             
