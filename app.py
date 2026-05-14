@@ -395,6 +395,7 @@ if uploaded_files:
                                 
                                 groups = temp_plot_df.groupby(['LSL_temp', 'USL_temp'])
                                 
+                                # FIX: TÍNH TOÁN MU & SIGMA_FIXED CHO TOÀN BỘ ĐỂ VẼ NORMAL FIT
                                 df_calc = plot_df.copy()
                                 grade_col = next((c for c in df.columns if any(kw in str(c).lower() for kw in ['grade', '等级', '等級', 'cấp', 'quality', 'loại'])), None)
                                 if grade_col:
@@ -402,6 +403,10 @@ if uploaded_files:
                                     if not f_df.empty: df_calc = f_df
                                 
                                 calc_data = df_calc[data_col].dropna()
+                                mu = calc_data.mean()
+                                sigma_fixed = calc_data.std(ddof=1)
+                                safe_sigma = sigma_fixed if pd.notnull(sigma_fixed) and sigma_fixed > 0 else 1
+                                safe_mu = mu if pd.notnull(mu) else plot_data.mean()
 
                                 tab_trend, tab_dist = st.tabs([f"📈 {selected_label} Trend", f"📊 {selected_label} Distribution"])
 
@@ -532,11 +537,11 @@ if uploaded_files:
                                     ax_d.set_ylabel("Coil Count")
                                     
                                     ax_pdf = ax_d.twinx()
-                                    x_min_fit, x_max_fit = min(plot_data.min(), mu - 4*sigma_fixed), max(plot_data.max(), mu + 4*sigma_fixed)
+                                    x_min_fit, x_max_fit = min(plot_data.min(), safe_mu - 4*safe_sigma), max(plot_data.max(), safe_mu + 4*safe_sigma)
                                     xs = np.linspace(x_min_fit, x_max_fit, 500)
                                     
                                     bin_w = (plot_data.max() - plot_data.min()) / 20 if plot_data.max() > plot_data.min() else 1
-                                    y_vals = norm.pdf(xs, mu, sigma_fixed) * n * bin_w
+                                    y_vals = norm.pdf(xs, safe_mu, safe_sigma) * n * bin_w
                                     ax_pdf.plot(xs, y_vals, color="#34495E", lw=3, label="Normal Fit")
                                     ax_pdf.set_yticks([])
                                     
@@ -608,6 +613,16 @@ if uploaded_files:
                                     st.download_button(label=f"📥 Download Dist Chart ({selected_label})", data=buf_d, file_name=f"Dist_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_dist_{fname}_{selected_label}")
 
                             elif view_mode == "SPC Control Charts (I-MR)":
+                                df_calc = plot_df.copy()
+                                grade_col = next((c for c in df.columns if any(kw in str(c).lower() for kw in ['grade', '等级', '等級', 'cấp', 'quality', 'loại'])), None)
+                                if grade_col:
+                                    f_df = df_calc[df_calc[grade_col].astype(str).str.upper().str.contains(r'A|B', regex=True, na=False)]
+                                    if not f_df.empty: df_calc = f_df
+                                
+                                calc_data = df_calc[data_col].dropna()
+                                mu = calc_data.mean()
+                                sigma_fixed = calc_data.std(ddof=1)
+
                                 thick_col = next((c for c in df.columns if "厚度" in str(c) or "thickness" in str(c).lower()), None)
                                 
                                 spc_groups = []
