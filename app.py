@@ -111,6 +111,9 @@ if uploaded_files:
         "Cross-Line Comparison 🔀"
     ])
 
+    # =========================================================================
+    # MODE 1: CROSS-LINE COMPARISON (UPDATED FOR MIXED-SPEC)
+    # =========================================================================
     if view_mode == "Cross-Line Comparison 🔀":
         st.title("🔀 Statistical Process Shift & Limits Recommendation")
         
@@ -131,7 +134,7 @@ if uploaded_files:
                 st.success(f"✅ Found {len(common_labels)} common properties to analyze: {', '.join(common_labels)}")
                 
                 for selected_label in common_labels:
-                    st.markdown(f"<hr><h2 style='color: #2E86C1;'>🔹 Analysis for Parameter: {selected_label}</h2>", unsafe_allow_html=True)
+                    st.markdown(f"<hr><h2 style='color: #2E86C1; text-align: center;'>🔹 Analysis for Parameter: {selected_label} 🔹</h2>", unsafe_allow_html=True)
                     
                     short_key = metrics_map[selected_label]
                     zh_key = zh_map_global.get(short_key, short_key)
@@ -139,83 +142,139 @@ if uploaded_files:
                     col_ma = find_data_col(df_ma, short_key)
                     col_son = find_data_col(df_son, short_key)
 
-                    vals_ma_full = pd.to_numeric(df_ma[col_ma], errors='coerce').dropna()
-                    vals_son_full = pd.to_numeric(df_son[col_son], errors='coerce').dropna()
+                    # Chuẩn bị dữ liệu Mạ
+                    temp_ma = df_ma.copy()
+                    temp_ma['val'] = pd.to_numeric(temp_ma[col_ma], errors='coerce')
+                    temp_ma = temp_ma.dropna(subset=['val']).reset_index(drop=True)
+                    n_ma = len(temp_ma)
 
-                    def get_theoretical_mean(df, data_col):
-                        df_calc = df.dropna(subset=[data_col]).copy()
-                        g_col = next((c for c in df.columns if any(kw in str(c).lower() for kw in ['grade', '等级', '等級', 'cấp', 'quality', 'loại'])), None)
-                        if g_col:
-                            f_df = df_calc[df_calc[g_col].astype(str).str.upper().str.contains(r'A|B', regex=True, na=False)]
-                            if not f_df.empty: df_calc = f_df
-                        return df_calc[data_col].mean()
+                    # Chuẩn bị dữ liệu Sơn
+                    temp_son = df_son.copy()
+                    temp_son['val'] = pd.to_numeric(temp_son[col_son], errors='coerce')
+                    temp_son = temp_son.dropna(subset=['val']).reset_index(drop=True)
+                    n_son = len(temp_son)
 
-                    mean_ma = get_theoretical_mean(df_ma, col_ma)
-                    mean_son = get_theoretical_mean(df_son, col_son)
-                    delta = mean_son - mean_ma
+                    # Lấy giới hạn nội bộ để nhóm (Tách riêng các Spec)
+                    ma_lsl = get_limit_series(temp_ma, zh_key, "min", "管制", n_ma).fillna(-1)
+                    ma_usl = get_limit_series(temp_ma, zh_key, "max", "管制", n_ma).fillna(-1)
+                    temp_ma['Spec_Group'] = list(zip(ma_lsl, ma_usl))
 
-                    lsl_son = get_limit(df_son, zh_key, "min", "管制")
-                    usl_son = get_limit(df_son, zh_key, "max", "管制")
-
-                    s_lsl = (lsl_son - delta) if lsl_son is not None else "N/A"
-                    s_usl = (usl_son - delta) if usl_son is not None else "N/A"
-
-                    st.markdown(f"#### 🔄 Optimal Limits Recommendation ({selected_label})")
-                    delta_data = [{
-                        "Parameter": selected_label,
-                        "Galv. Mean (Theo.)": format_num(mean_ma),
-                        "Coating Mean (Theo.)": format_num(mean_son),
-                        "Shift (Δ)": format_num(delta),
-                        "Current Coating LSL": format_num(lsl_son) if lsl_son is not None else "N/A",
-                        "Current Coating USL": format_num(usl_son) if usl_son is not None else "N/A",
-                        "Recommended Galv. LSL": format_num(s_lsl) if isinstance(s_lsl, (int, float)) else s_lsl,
-                        "Recommended Galv. USL": format_num(s_usl) if isinstance(s_usl, (int, float)) else s_usl
-                    }]
-                    st.dataframe(pd.DataFrame(delta_data), hide_index=True, use_container_width=True)
-
-                    st.markdown("#### 🔬 2-Sample T-Test")
-                    t_stat, p_val = ttest_ind(vals_son_full, vals_ma_full, equal_var=False)
-                    is_significant = "YES" if p_val < 0.05 else "NO"
+                    son_lsl = get_limit_series(temp_son, zh_key, "min", "管制", n_son).fillna(-1)
+                    son_usl = get_limit_series(temp_son, zh_key, "max", "管制", n_son).fillna(-1)
                     
-                    t_test_data = pd.DataFrame([{
-                        "Metric": "T-Statistic", "Value": format_num(t_stat)
-                    }, {
-                        "Metric": "P-Value", "Value": f"{p_val:.4f}"
-                    }, {
-                        "Metric": "Significant Shift? (<0.05)", "Value": is_significant
-                    }])
-                    st.table(t_test_data)
+                    # Ép YPE LSL = 4.0 cho dây chuyền Sơn
+                    if short_key == "YPE":
+                        temp_son['Spec_Group'] = list(zip(pd.Series([4.0]*n_son), son_usl))
+                    else:
+                        temp_son['Spec_Group'] = list(zip(son_lsl, son_usl))
 
-                    st.markdown("#### 📈 Process Shift Distribution")
-                    fig_comp, ax_comp = plt.subplots(figsize=(12, 6))
-                    
-                    for label_name, vals, color in [
-                        (f"Galvanizing Line", vals_ma_full, '#1f77b4'),
-                        (f"Coating Line", vals_son_full, '#ff7f0e')
-                    ]:
-                        if len(vals) > 1 and vals.std() > 0:
-                            mu_val = vals.mean()
-                            sigma_val = vals.std(ddof=1)
+                    # Tìm các nhóm Spec chung giữa 2 dây chuyền
+                    specs_ma = set(temp_ma['Spec_Group'].unique())
+                    specs_son = set(temp_son['Spec_Group'].unique())
+                    common_specs = specs_ma.intersection(specs_son)
+
+                    if not common_specs:
+                        st.warning(f"⚠️ Không tìm thấy khung giới hạn chung nào giữa 2 dây chuyền cho {selected_label}.")
+                        continue
+
+                    # Lặp qua từng nhóm Spec để tính toán độc lập
+                    for spec in sorted(list(common_specs)):
+                        lsl, usl = spec
+                        spec_str = f"{format_num(lsl) if lsl != -1 else 'N/A'} - {format_num(usl) if usl != -1 else 'N/A'}"
+                        
+                        st.markdown(f"<h3 style='color: #D35400;'>📌 Phân tích nhóm Spec: {spec_str}</h3>", unsafe_allow_html=True)
+
+                        group_ma = temp_ma[temp_ma['Spec_Group'] == spec]
+                        group_son = temp_son[temp_son['Spec_Group'] == spec]
+
+                        vals_ma_full = group_ma['val']
+                        vals_son_full = group_son['val']
+
+                        def get_theoretical_mean_group(df_group):
+                            df_calc = df_group.copy()
+                            g_col = next((c for c in df_group.columns if any(kw in str(c).lower() for kw in ['grade', '等级', '等級', 'cấp', 'quality', 'loại'])), None)
+                            if g_col:
+                                f_df = df_calc[df_calc[g_col].astype(str).str.upper().str.contains(r'A|B', regex=True, na=False)]
+                                if not f_df.empty: df_calc = f_df
+                            return df_calc['val'].mean()
+
+                        mean_ma = get_theoretical_mean_group(group_ma)
+                        mean_son = get_theoretical_mean_group(group_son)
+                        
+                        # Tính Shift (Delta)
+                        delta = mean_son - mean_ma if pd.notnull(mean_son) and pd.notnull(mean_ma) else 0
+
+                        lsl_son = lsl if lsl != -1 else None
+                        usl_son = usl if usl != -1 else None
+
+                        s_lsl = (lsl_son - delta) if lsl_son is not None else "N/A"
+                        s_usl = (usl_son - delta) if usl_son is not None else "N/A"
+
+                        st.markdown(f"**🔄 Optimal Limits Recommendation**")
+                        delta_data = [{
+                            "Spec Group": spec_str,
+                            "Galv. Mean (Theo.)": format_num(mean_ma),
+                            "Coating Mean (Theo.)": format_num(mean_son),
+                            "Shift (Δ)": format_num(delta),
+                            "Current Coating LSL": format_num(lsl_son) if lsl_son is not None else "N/A",
+                            "Current Coating USL": format_num(usl_son) if usl_son is not None else "N/A",
+                            "Recommended Galv. LSL": format_num(s_lsl) if isinstance(s_lsl, (int, float)) else s_lsl,
+                            "Recommended Galv. USL": format_num(s_usl) if isinstance(s_usl, (int, float)) else s_usl
+                        }]
+                        st.dataframe(pd.DataFrame(delta_data), hide_index=True, use_container_width=True)
+
+                        # T-Test cho nhóm
+                        if len(vals_son_full) > 1 and len(vals_ma_full) > 1:
+                            t_stat, p_val = ttest_ind(vals_son_full, vals_ma_full, equal_var=False)
+                            is_significant = "YES" if p_val < 0.05 else "NO"
+                        else:
+                            t_stat, p_val, is_significant = np.nan, np.nan, "N/A"
+                        
+                        c1, c2 = st.columns([1, 2])
+                        with c1:
+                            st.markdown("**🔬 2-Sample T-Test**")
+                            t_test_data = pd.DataFrame([{
+                                "Metric": "T-Statistic", "Value": format_num(t_stat)
+                            }, {
+                                "Metric": "P-Value", "Value": f"{p_val:.4f}" if pd.notnull(p_val) else "N/A"
+                            }, {
+                                "Metric": "Significant Shift?", "Value": is_significant
+                            }])
+                            st.table(t_test_data)
+
+                        # Biểu đồ phân phối cho nhóm
+                        with c2:
+                            fig_comp, ax_comp = plt.subplots(figsize=(8, 4))
                             
-                            x_range = np.linspace(mu_val - 4*sigma_val, mu_val + 4*sigma_val, 500)
-                            bin_width = (vals.max() - vals.min()) / 20 if vals.max() > vals.min() else 1
-                            y_vals = norm.pdf(x_range, mu_val, sigma_val) * len(vals) * bin_width
+                            for label_name, vals, color in [
+                                (f"Galvanizing (n={len(vals_ma_full)})", vals_ma_full, '#1f77b4'),
+                                (f"Coating (n={len(vals_son_full)})", vals_son_full, '#ff7f0e')
+                            ]:
+                                if len(vals) > 1 and vals.std() > 0:
+                                    mu_val = vals.mean()
+                                    sigma_val = vals.std(ddof=1)
+                                    
+                                    x_range = np.linspace(mu_val - 4*sigma_val, mu_val + 4*sigma_val, 500)
+                                    bin_width = (vals.max() - vals.min()) / 20 if vals.max() > vals.min() else 1
+                                    y_vals = norm.pdf(x_range, mu_val, sigma_val) * len(vals) * bin_width
+                                    
+                                    ax_comp.plot(x_range, y_vals, color=color, lw=2.5, label=label_name)
+                                    ax_comp.fill_between(x_range, y_vals, alpha=0.3, color=color)
+                                    ax_comp.axvline(mu_val, color=color, linestyle='--', alpha=0.8) 
                             
-                            ax_comp.plot(x_range, y_vals, color=color, lw=3, label=label_name)
-                            ax_comp.fill_between(x_range, y_vals, alpha=0.3, color=color)
-                            ax_comp.axvline(mu_val, color=color, linestyle='--', alpha=0.8) 
-                    
-                    ax_comp.set_ylabel("Coil Count")
-                    ax_comp.set_xlabel(f"{selected_label} Value")
-                    ax_comp.set_title(f"Shift Comparison: {selected_label} (Δ = {format_num(delta)})", pad=20)
-                    ax_comp.legend(loc="upper right")
-                    apply_full_border(ax_comp)
-                    plt.tight_layout()
-                    st.pyplot(fig_comp)
-                    
-                    buf_comp = export_to_word([fig_comp], [f"Distribution Shift Chart - {selected_label}"])
-                    st.download_button(label=f"📥 Download Chart ({selected_label})", data=buf_comp, file_name=f"ShiftPlot_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_cross_{selected_label}")
+                            ax_comp.set_ylabel("Coil Count")
+                            ax_comp.set_xlabel(f"{selected_label} Value")
+                            ax_comp.set_title(f"Shift Dist. (Δ = {format_num(delta)}) | Spec: {spec_str}", pad=10)
+                            ax_comp.legend(loc="upper right", fontsize=9)
+                            apply_full_border(ax_comp)
+                            plt.tight_layout()
+                            st.pyplot(fig_comp)
+                        
+                        st.markdown("<br>", unsafe_allow_html=True)
 
+    # =========================================================================
+    # MODE 2: TABBED ANALYSIS FOR INDIVIDUAL LINES
+    # =========================================================================
     else:
         st.title(f"📊 {view_mode}")
         
@@ -326,7 +385,6 @@ if uploaded_files:
                             if is_coating_line and short_key == "YPE":
                                 int_lsl_series = pd.Series([4.0] * n)
                             
-                            # Nhóm dữ liệu
                             temp_plot_df = plot_df.copy()
                             temp_plot_df['LSL_temp'] = int_lsl_series.fillna(-1).values
                             temp_plot_df['USL_temp'] = int_usl_series.fillna(-1).values
@@ -334,7 +392,6 @@ if uploaded_files:
                             groups = temp_plot_df.groupby(['LSL_temp', 'USL_temp'])
                             trend_colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2']
                             
-                            # Tính Đường trung bình (Mean) động cho từng cụm Spec
                             mean_series = pd.Series(index=temp_plot_df.index, dtype=float)
                             for (lsl, usl), group in groups:
                                 mean_series.loc[group.index] = group[data_col].mean()
@@ -347,7 +404,7 @@ if uploaded_files:
                                 if not f_df.empty: df_calc = f_df
                             
                             calc_data = df_calc[data_col].dropna()
-                            mu = calc_data.mean() # Global mean for UCL/LCL
+                            mu = calc_data.mean()
                             sigma_fixed = calc_data.std(ddof=1)
 
                             if view_mode == "Process Analytics":
@@ -358,7 +415,6 @@ if uploaded_files:
                                     fig_t, ax_t = plt.subplots(figsize=(13, 6.5)) 
                                     x_coords = np.arange(1, n+1)
 
-                                    # 1. HÀNH LANG DUNG SAI (TOLERANCE CORRIDOR)
                                     if not int_lsl_series.isna().all() and not int_usl_series.isna().all():
                                         lower_bound = int_lsl_series.ffill().bfill()
                                         upper_bound = int_usl_series.ffill().bfill()
@@ -369,7 +425,6 @@ if uploaded_files:
                                         lower_bound = pd.Series([-np.inf] * n)
                                         upper_bound = pd.Series([np.inf] * n)
 
-                                    # 2. ĐƯỜNG GIỚI HẠN KHÁCH HÀNG
                                     if not cust_lsl_series.isna().all():
                                         c_lower = cust_lsl_series.ffill().bfill()
                                         ax_t.step(x_coords, c_lower, color="#7F8C8D", linestyle="--", linewidth=2, alpha=0.85, where='post', label="Cust Limit")
@@ -377,7 +432,6 @@ if uploaded_files:
                                         c_upper = cust_usl_series.ffill().bfill()
                                         ax_t.step(x_coords, c_upper, color="#7F8C8D", linestyle="--", linewidth=2, alpha=0.85, where='post')
 
-                                    # 3. VẼ ĐIỂM DỮ LIỆU & ĐƯỜNG TRUNG BÌNH THEO ĐOẠN (KHÔNG GẤP KHÚC)
                                     color_idx = 0
                                     for (lsl, usl), group in groups:
                                         c = trend_colors[color_idx % len(trend_colors)]
@@ -385,7 +439,7 @@ if uploaded_files:
                                         l_str = "N/A" if lsl == -1 else format_num(lsl)
                                         u_str = "N/A" if usl == -1 else format_num(usl)
                                         
-                                        # Vẽ trung bình nhóm dạng đường thẳng đứt đoạn (không có nét nối dọc)
+                                        # Vẽ Mean riêng cho nhóm dạng Line đứt đoạn (Không có nét dọc kéo xuống)
                                         group_mean = group[data_col].mean()
                                         ax_t.plot(x_coords, np.where(mask, group_mean, np.nan), color="blue", linestyle="-", linewidth=1.5, alpha=0.6, label="Group Mean")
                                         
@@ -396,7 +450,6 @@ if uploaded_files:
                                     if mask_out.any():
                                         ax_t.scatter(x_coords[mask_out], plot_data[mask_out], color="#E74C3C", s=60, edgecolor="darkred", linewidth=1.5, zorder=6, label="Out of Limit")
 
-                                    # 4. AUTO-ZOOM TRỤC Y VÀ DÀNH KHÔNG GIAN BÊN PHẢI CHO NHÃN SỐ LIỆU
                                     valid_y = plot_data.dropna()
                                     ymin, ymax = valid_y.min(), valid_y.max()
                                     
@@ -410,7 +463,6 @@ if uploaded_files:
                                     ax_t.set_ylim(ymin - y_range*0.12, ymax + y_range*0.12)
                                     ax_t.set_xlim(0, n * 1.18)
 
-                                    # 5. THUẬT TOÁN "SMART CALLOUTS" (GẮN NHÃN LỀ PHẢI CHỐNG ĐÈ CHỮ)
                                     label_dict = {}
                                     def add_to_label(val, name, color):
                                         if pd.isna(val) or val <= 0: return
@@ -586,7 +638,7 @@ if uploaded_files:
                                     l_str = "N/A" if lsl == -1 else format_num(lsl)
                                     u_str = "N/A" if usl == -1 else format_num(usl)
                                     
-                                    # Vẽ trung bình SPC đoạn rời rạc
+                                    # Vẽ Mean riêng cho nhóm dạng Line đứt đoạn
                                     group_mean = group[data_col].mean()
                                     ax_i.plot(x_coords_spc, np.where(mask, group_mean, np.nan), color="blue", linestyle="-", linewidth=1.5, alpha=0.6, label="Group Mean")
 
