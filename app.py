@@ -440,45 +440,68 @@ if uploaded_files:
                                     ax_pdf.plot(xs, y_vals, color="#1E3A8A", lw=3, label="Normal Fit")
                                     ax_pdf.set_yticks([])
                                     
-                                    # --- GIẢI QUYẾT VẤN ĐỀ 1: SO LE & XOAY LABEL ĐỂ TRÁNH ĐÈ TEXT ---
-                                    def add_vline_std(ax, val, color, ls, label, level=0, stagger_idx=0):
-                                        if val is not None and val > 0:  
-                                            ax.axvline(val, color=color, linestyle=ls, linewidth=2.5, label=label)
-                                            trans = ax.get_xaxis_transform()
-                                            
-                                            # Đẩy text lên cao dần theo stagger_idx (chia làm 4 nấc) để né nhau
-                                            y_pos = 1.02 + (level * 0.1) + ((stagger_idx % 4) * 0.06) 
-                                            
-                                            # Thêm rotation=45 để chữ xoay nghiêng, tiết kiệm không gian ngang
-                                            ax.text(val, y_pos, f" {val:.1f}", color=color, ha='left', va='bottom', transform=trans, fontweight='bold', rotation=45, fontsize=10)
+                                    # --- GIẢI QUYẾT VẤN ĐỀ 1: GỘP & SẮP XẾP TOÀN BỘ GIỚI HẠN ĐỂ TRÁNH ĐÈ TEXT ---
+                                    lines_to_draw = []
+                                    
+                                    # Hàm thu thập các vạch giới hạn thay vì vẽ ngay lập tức
+                                    def register_vline(val, color, ls, label):
+                                        if val is not None and val > 0:
+                                            lines_to_draw.append({'val': val, 'color': color, 'ls': ls, 'label': label})
 
-                                    def add_multiple_vlines(ax, limit_series, color, ls, base_label, level):
+                                    def register_multiple(limit_series, color, ls, base_label):
                                         if limit_series is not None and not limit_series.isna().all():
                                             unique_vals = limit_series.dropna().unique()
                                             unique_vals = [v for v in unique_vals if v > 0]
                                             for i, val in enumerate(unique_vals):
                                                 label = base_label if i == 0 else None
-                                                add_vline_std(ax, val, color, ls, label, level, stagger_idx=i)
+                                                register_vline(val, color, ls, label)
 
-                                    # Vẽ các đường dọc với chỉ số stagger_idx khác nhau
-                                    add_vline_std(ax_d, mu, "blue", "-", "Mean", 0, stagger_idx=3)
-                                    add_multiple_vlines(ax_d, cust_lsl_series, "green", "-", "Cust LSL", 0)
-                                    add_multiple_vlines(ax_d, cust_usl_series, "green", "-", "Cust USL", 0)
-                                    add_multiple_vlines(ax_d, int_lsl_series, "red", "--", "Int LSL", 1)
-                                    add_multiple_vlines(ax_d, int_usl_series, "red", "--", "Int USL", 1)
-                                    add_vline_std(ax_d, ucl_v1, "#6A0DAD", ":", "3σ UCL", 2, stagger_idx=0) 
-                                    add_vline_std(ax_d, lcl_v1, "#6A0DAD", ":", "3σ LCL", 2, stagger_idx=0) 
+                                    # 1. Thu thập toàn bộ các mốc
+                                    register_vline(mu, "blue", "-", "Mean")
+                                    register_multiple(cust_lsl_series, "green", "-", "Cust LSL")
+                                    register_multiple(cust_usl_series, "green", "-", "Cust USL")
+                                    register_multiple(int_lsl_series, "red", "--", "Int LSL")
+                                    register_multiple(int_usl_series, "red", "--", "Int USL")
+                                    register_vline(ucl_v1, "#6A0DAD", ":", "3σ UCL")
+                                    register_vline(lcl_v1, "#6A0DAD", ":", "3σ LCL")
+
+                                    # 2. Sắp xếp mốc theo giá trị X từ trái sang phải
+                                    lines_to_draw.sort(key=lambda x: x['val'])
+
+                                    # 3. Vẽ và ép so le theo thứ tự (đảm bảo cạnh nhau luôn khác tầng)
+                                    trans = ax_d.get_xaxis_transform()
+                                    for i, item in enumerate(lines_to_draw):
+                                        val = item['val']
+                                        c = item['color']
+                                        
+                                        # Vẽ đường dọc
+                                        ax_d.axvline(val, color=c, linestyle=item['ls'], linewidth=2.5, label=item['label'])
+                                        
+                                        # Chia thành 5 tầng chiều cao hoàn toàn tách biệt
+                                        level = i % 5
+                                        y_pos = 1.02 + (level * 0.08)
+                                        
+                                        # Thêm box nền trắng mờ để lỡ chữ có vắt ngang đường kẻ thì vẫn đọc được
+                                        bbox_props = dict(boxstyle="round,pad=0.1", fc="white", ec="none", alpha=0.7)
+                                        
+                                        ax_d.text(val, y_pos, f" {val:.1f}", color=c, ha='left', va='bottom', 
+                                                  transform=trans, fontweight='bold', rotation=45, fontsize=10, bbox=bbox_props)
                                     # -----------------------------------------------------------------
                                     
-                                    # Tăng pad=80 để đẩy title lên cao, chừa khoảng trống cho text nghiêng
-                                    ax_d.set_title(f"{selected_label} Distribution (N={n})", pad=80) 
+                                    # Tăng pad=120 để đẩy title lên cao hẳn, chừa chỗ cho 5 tầng text bên dưới
+                                    ax_d.set_title(f"{selected_label} Distribution (N={n})", pad=120) 
                                     
                                     # Gom tất cả Legend lại thành một bảng chú thích gọn gàng
                                     handles, labels = ax_d.get_legend_handles_labels()
                                     handles_pdf, labels_pdf = ax_pdf.get_legend_handles_labels()
-                                    ax_d.legend(handles + handles_pdf, labels + labels_pdf, loc="upper left", bbox_to_anchor=(1, 1))
                                     
-                                    apply_full_border(ax_d); plt.tight_layout(); st.pyplot(fig_d)
+                                    # Loại bỏ các label trùng lặp trong Legend nếu có
+                                    by_label = dict(zip(labels + labels_pdf, handles + handles_pdf))
+                                    ax_d.legend(by_label.values(), by_label.keys(), loc="upper left", bbox_to_anchor=(1, 1))
+                                    
+                                    # Mở rộng không gian phía trên để chữ không bị cắt mất khi lưu ảnh
+                                    plt.tight_layout(rect=[0, 0, 1, 0.95]) 
+                                    st.pyplot(fig_d)
                                     
                                     buf_d = export_to_word([fig_d], [f"Distribution Analysis - {selected_label}"])
                                     st.download_button(label=f"📥 Download Dist Chart ({selected_label})", data=buf_d, file_name=f"Dist_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_dist_{fname}_{selected_label}")
