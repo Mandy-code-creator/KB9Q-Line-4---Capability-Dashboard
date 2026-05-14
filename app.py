@@ -355,7 +355,7 @@ if uploaded_files:
                                 ucl_v1, lcl_v1 = mu + 3*sigma_fixed, mu - 3*sigma_fixed
 
                                 with tab_trend:
-                                    fig_t, ax_t = plt.subplots(figsize=(13, 6.5)) # Nới rộng khung hình một chút
+                                    fig_t, ax_t = plt.subplots(figsize=(13, 6.5)) 
                                     x_coords = np.arange(1, n+1)
 
                                     # 1. HÀNH LANG DUNG SAI (TOLERANCE CORRIDOR)
@@ -369,7 +369,7 @@ if uploaded_files:
                                         lower_bound = pd.Series([-np.inf] * n)
                                         upper_bound = pd.Series([np.inf] * n)
 
-                                    # 2. ĐƯỜNG GIỚI HẠN KHÁCH HÀNG (Đậm và rõ nét hơn)
+                                    # 2. ĐƯỜNG GIỚI HẠN KHÁCH HÀNG
                                     if not cust_lsl_series.isna().all():
                                         c_lower = cust_lsl_series.ffill().bfill()
                                         ax_t.step(x_coords, c_lower, color="#7F8C8D", linestyle="--", linewidth=2, alpha=0.85, where='post', label="Cust Limit")
@@ -377,16 +377,18 @@ if uploaded_files:
                                         c_upper = cust_usl_series.ffill().bfill()
                                         ax_t.step(x_coords, c_upper, color="#7F8C8D", linestyle="--", linewidth=2, alpha=0.85, where='post')
 
-                                    # 3. ĐƯỜNG TRUNG BÌNH ĐỘNG (Dành riêng cho từng Spec)
-                                    ax_t.step(x_coords, mean_series, color="blue", linestyle="-", linewidth=1.5, alpha=0.5, where='post', label="Group Mean")
-
-                                    # 4. VẼ ĐIỂM DỮ LIỆU
+                                    # 3. VẼ ĐIỂM DỮ LIỆU & ĐƯỜNG TRUNG BÌNH THEO ĐOẠN (KHÔNG GẤP KHÚC)
                                     color_idx = 0
                                     for (lsl, usl), group in groups:
                                         c = trend_colors[color_idx % len(trend_colors)]
                                         mask = temp_plot_df.index.isin(group.index)
                                         l_str = "N/A" if lsl == -1 else format_num(lsl)
                                         u_str = "N/A" if usl == -1 else format_num(usl)
+                                        
+                                        # Vẽ trung bình nhóm dạng đường thẳng đứt đoạn (không có nét nối dọc)
+                                        group_mean = group[data_col].mean()
+                                        ax_t.plot(x_coords, np.where(mask, group_mean, np.nan), color="blue", linestyle="-", linewidth=1.5, alpha=0.6, label="Group Mean")
+                                        
                                         ax_t.scatter(x_coords[mask], plot_data[mask], color=c, s=40, edgecolor="black", linewidth=0.8, zorder=4, label=f"Data ({l_str}-{u_str})")
                                         color_idx += 1
 
@@ -394,13 +396,10 @@ if uploaded_files:
                                     if mask_out.any():
                                         ax_t.scatter(x_coords[mask_out], plot_data[mask_out], color="#E74C3C", s=60, edgecolor="darkred", linewidth=1.5, zorder=6, label="Out of Limit")
 
-                                    # ==============================================================
-                                    # 5. AUTO-ZOOM TRỤC Y VÀ DÀNH KHÔNG GIAN BÊN PHẢI CHO NHÃN SỐ LIỆU
-                                    # ==============================================================
+                                    # 4. AUTO-ZOOM TRỤC Y VÀ DÀNH KHÔNG GIAN BÊN PHẢI CHO NHÃN SỐ LIỆU
                                     valid_y = plot_data.dropna()
                                     ymin, ymax = valid_y.min(), valid_y.max()
                                     
-                                    # Quét qua tất cả giới hạn để gom vào khoảng zoom
                                     for s in [int_lsl_series, int_usl_series, cust_lsl_series, cust_usl_series, mean_series]:
                                         s_valid = s[s > 0].dropna()
                                         if not s_valid.empty:
@@ -409,22 +408,17 @@ if uploaded_files:
                                             
                                     y_range = ymax - ymin if ymax > ymin else 10
                                     ax_t.set_ylim(ymin - y_range*0.12, ymax + y_range*0.12)
-                                    
-                                    # Mở rộng 18% không gian lề phải để vẽ Text nhãn
                                     ax_t.set_xlim(0, n * 1.18)
 
-                                    # ==============================================================
-                                    # 6. THUẬT TOÁN "SMART CALLOUTS" (GẮN NHÃN LỀ PHẢI CHỐNG ĐÈ CHỮ)
-                                    # ==============================================================
+                                    # 5. THUẬT TOÁN "SMART CALLOUTS" (GẮN NHÃN LỀ PHẢI CHỐNG ĐÈ CHỮ)
                                     label_dict = {}
                                     def add_to_label(val, name, color):
                                         if pd.isna(val) or val <= 0: return
-                                        val = round(val, 1) # Gom các số quá giống nhau lại
+                                        val = round(val, 1) 
                                         if val not in label_dict: label_dict[val] = []
                                         if not any(item['name'] == name for item in label_dict[val]):
                                             label_dict[val].append({'name': name, 'color': color})
 
-                                    # Thu thập mọi con số cần hiển thị
                                     if not cust_lsl_series.isna().all():
                                         for v in cust_lsl_series.dropna().unique(): add_to_label(v, "Cust LSL", "#7F8C8D")
                                     if not cust_usl_series.isna().all():
@@ -437,7 +431,7 @@ if uploaded_files:
                                         add_to_label(v, "Mean", "blue")
 
                                     sorted_vals = sorted(label_dict.keys())
-                                    min_y_dist = y_range * 0.05  # Khoảng cách né chữ tối thiểu (5% chiều cao trục Y)
+                                    min_y_dist = y_range * 0.05  
                                     last_y = -np.inf
                                     
                                     for val in sorted_vals:
@@ -446,25 +440,20 @@ if uploaded_files:
                                         main_color = items[0]['color']
                                         
                                         y_draw = val
-                                        # NẾU BỊ ĐÈ CHỮ -> ĐẨY LÊN TRÊN MỘT CHÚT
                                         if y_draw - last_y < min_y_dist:
                                             y_draw = last_y + min_y_dist
                                             
-                                        # Vẽ đường dẫn (leader line) nối từ lề biểu đồ tới hộp chữ
                                         ax_t.plot([n, n + (n*0.02)], [val, y_draw], color="black", linestyle="-", lw=0.8, alpha=0.3)
                                         
-                                        # Vẽ Text
                                         bbox = dict(boxstyle="round,pad=0.3", fc="#FDFEFE", ec=main_color, alpha=0.9, lw=1.2)
                                         ax_t.text(n + (n*0.025), y_draw, f"{names_str}: {val:.1f}", color=main_color, va='center', ha='left', fontsize=9, bbox=bbox, fontweight='bold')
                                         
                                         last_y = y_draw
-                                    # ==============================================================
 
                                     ax_t.set_xlabel("Coil Sequence")
                                     ax_t.set_ylabel(f"{selected_label} Value")
                                     ax_t.set_title(f"{selected_label} Trend Analysis (N={n})", pad=20)
                                     
-                                    # Dọn Legend
                                     handles, labels = ax_t.get_legend_handles_labels()
                                     by_label = dict(zip(labels, handles))
                                     ax_t.legend(by_label.values(), by_label.keys(), loc="upper center", bbox_to_anchor=(0.5, -0.15), ncol=4, fontsize=9)
@@ -589,7 +578,6 @@ if uploaded_files:
                                 x_coords_spc = np.arange(1, n+1)
                                 
                                 ax_i.plot(x_coords_spc, plot_data, color="#CFD8DC", linestyle="-", linewidth=1.5, zorder=1)
-                                ax_i.step(x_coords_spc, mean_series, color="blue", ls="-", lw=1.5, alpha=0.5, label="Group Mean", where='post')
                                 
                                 color_idx = 0
                                 for (lsl, usl), group in groups:
@@ -598,6 +586,10 @@ if uploaded_files:
                                     l_str = "N/A" if lsl == -1 else format_num(lsl)
                                     u_str = "N/A" if usl == -1 else format_num(usl)
                                     
+                                    # Vẽ trung bình SPC đoạn rời rạc
+                                    group_mean = group[data_col].mean()
+                                    ax_i.plot(x_coords_spc, np.where(mask, group_mean, np.nan), color="blue", linestyle="-", linewidth=1.5, alpha=0.6, label="Group Mean")
+
                                     ax_i.scatter(x_coords_spc[mask], plot_data[mask], color=c, s=50, edgecolor="black", zorder=3, label=f"Data & Lim ({l_str}-{u_str})")
                                     
                                     if lsl != -1: 
