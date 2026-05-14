@@ -440,7 +440,7 @@ if uploaded_files:
                                     ax_pdf.plot(xs, y_vals, color="#1E3A8A", lw=3, label="Normal Fit")
                                     ax_pdf.set_yticks([])
                                     
-                                    # --- GIẢI QUYẾT VẤN ĐỀ 1: GỘP & SẮP XẾP TOÀN BỘ GIỚI HẠN ĐỂ TRÁNH ĐÈ TEXT ---
+                                    # --- GIẢI QUYẾT TRIỆT ĐỂ: THUẬT TOÁN NESTING CHỐNG ĐÈ LABEL ---
                                     lines_to_draw = []
                                     
                                     # Hàm thu thập các vạch giới hạn thay vì vẽ ngay lập tức
@@ -468,39 +468,59 @@ if uploaded_files:
                                     # 2. Sắp xếp mốc theo giá trị X từ trái sang phải
                                     lines_to_draw.sort(key=lambda x: x['val'])
 
-                                    # 3. Vẽ và ép so le theo thứ tự (đảm bảo cạnh nhau luôn khác tầng)
+                                    # 3. Tính toán khoảng cách an toàn (tránh đè text)
+                                    x_range = x_max_fit - x_min_fit
+                                    min_dist = x_range * 0.09  # Khoảng cách an toàn = 9% độ rộng biểu đồ
+
+                                    levels_last_x = [-np.inf] * 6  # Quản lý 6 tầng độ cao xếp chồng
                                     trans = ax_d.get_xaxis_transform()
-                                    for i, item in enumerate(lines_to_draw):
+                                    
+                                    for item in lines_to_draw:
                                         val = item['val']
                                         c = item['color']
                                         
                                         # Vẽ đường dọc
                                         ax_d.axvline(val, color=c, linestyle=item['ls'], linewidth=2.5, label=item['label'])
                                         
-                                        # Chia thành 5 tầng chiều cao hoàn toàn tách biệt
-                                        level = i % 5
-                                        y_pos = 1.02 + (level * 0.08)
+                                        # Thuật toán tìm tầng thấp nhất còn đủ chỗ trống
+                                        assigned_level = 0
+                                        for i in range(len(levels_last_x)):
+                                            if (val - levels_last_x[i]) > min_dist:
+                                                assigned_level = i
+                                                levels_last_x[i] = val
+                                                break
+                                        else:
+                                            # Nếu hết 6 tầng vẫn trùng, ghi đè lên tầng cao nhất
+                                            assigned_level = 5
+                                            levels_last_x[5] = val
                                         
-                                        # Thêm box nền trắng mờ để lỡ chữ có vắt ngang đường kẻ thì vẫn đọc được
-                                        bbox_props = dict(boxstyle="round,pad=0.1", fc="white", ec="none", alpha=0.7)
+                                        # Căn chỉnh Y dựa trên tầng đã cấp
+                                        y_pos = 1.02 + (assigned_level * 0.08)
                                         
-                                        ax_d.text(val, y_pos, f" {val:.1f}", color=c, ha='left', va='bottom', 
-                                                  transform=trans, fontweight='bold', rotation=45, fontsize=10, bbox=bbox_props)
+                                        # Box viền trùng màu đường kẻ, chữ nằm ngang dễ nhìn
+                                        bbox_props = dict(boxstyle="round,pad=0.2", fc="white", ec=c, alpha=0.9, lw=1.5)
+                                        
+                                        ax_d.text(val, y_pos, f"{val:.1f}", color=c, ha='center', va='bottom', 
+                                                  transform=trans, fontweight='bold', fontsize=10, bbox=bbox_props)
                                     # -----------------------------------------------------------------
                                     
-                                    # Tăng pad=120 để đẩy title lên cao hẳn, chừa chỗ cho 5 tầng text bên dưới
-                                    ax_d.set_title(f"{selected_label} Distribution (N={n})", pad=120) 
+                                    # Tăng pad lên 110 để nới rộng trần biểu đồ, chừa chỗ cho các hộp text
+                                    ax_d.set_title(f"{selected_label} Distribution (N={n})", pad=110) 
                                     
-                                    # Gom tất cả Legend lại thành một bảng chú thích gọn gàng
+                                    # Lọc bỏ Label trùng trong Legend
                                     handles, labels = ax_d.get_legend_handles_labels()
                                     handles_pdf, labels_pdf = ax_pdf.get_legend_handles_labels()
                                     
-                                    # Loại bỏ các label trùng lặp trong Legend nếu có
+                                    # Lọc danh sách unique cho Legend để giữ sạch sẽ
                                     by_label = dict(zip(labels + labels_pdf, handles + handles_pdf))
-                                    ax_d.legend(by_label.values(), by_label.keys(), loc="upper left", bbox_to_anchor=(1, 1))
+                                    # Đảm bảo bỏ các nhãn None (nếu có sinh ra)
+                                    clean_dict = {k: v for k, v in by_label.items() if k is not None and k != ''}
                                     
-                                    # Mở rộng không gian phía trên để chữ không bị cắt mất khi lưu ảnh
-                                    plt.tight_layout(rect=[0, 0, 1, 0.95]) 
+                                    ax_d.legend(clean_dict.values(), clean_dict.keys(), loc="upper left", bbox_to_anchor=(1, 1))
+                                    
+                                    apply_full_border(ax_d)
+                                    # Bóp nhẹ chiều cao biểu đồ xuống 90% (chừa 10% không gian trống bên trên cho Text không bị cắt)
+                                    plt.tight_layout(rect=[0, 0, 1, 0.9]) 
                                     st.pyplot(fig_d)
                                     
                                     buf_d = export_to_word([fig_d], [f"Distribution Analysis - {selected_label}"])
