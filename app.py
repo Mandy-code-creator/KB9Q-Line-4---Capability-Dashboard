@@ -73,6 +73,17 @@ def format_num(val):
     rounded = round(float(val), 2)
     return str(int(rounded)) if rounded == int(rounded) else str(rounded)
 
+def format_spec(lsl, usl):
+    """Hàm thông minh tự nhận diện và hiển thị Legend cho giới hạn"""
+    if lsl != -1 and usl != -1:
+        return f"{format_num(lsl)}-{format_num(usl)}"
+    elif lsl != -1:
+        return f"≥ {format_num(lsl)}"
+    elif usl != -1:
+        return f"≤ {format_num(usl)}"
+    else:
+        return "No Spec"
+
 def export_to_word(figures, titles):
     doc = Document()
     doc.add_heading('Quality Analytics Report', 0)
@@ -267,7 +278,10 @@ if uploaded_files:
                             
                             ax_comp.set_ylabel("Coil Count")
                             ax_comp.set_xlabel(f"{selected_label} Value")
-                            ax_comp.set_title(f"Shift Dist. (Δ = {format_num(delta)})", pad=10)
+                            
+                            short_title = "Global" if lsl_son is None and usl_son is None else format_spec(lsl_son if lsl_son is not None else -1, usl_son if usl_son is not None else -1)
+                            ax_comp.set_title(f"Shift Dist. (Δ = {format_num(delta)}) | {short_title}", pad=10)
+                            
                             ax_comp.legend(loc="upper right", fontsize=9)
                             apply_full_border(ax_comp)
                             plt.tight_layout()
@@ -428,7 +442,7 @@ if uploaded_files:
                                         if not any(item['name'] == name for item in label_dict[val]):
                                             label_dict[val].append({'name': name, 'color': color})
 
-                                    # 1. ĐƯỜNG GIỚI HẠN KHÁCH HÀNG (Đậm, Rõ Nét)
+                                    # 1. ĐƯỜNG GIỚI HẠN KHÁCH HÀNG
                                     if not cust_lsl_series.isna().all():
                                         for c_val in cust_lsl_series.dropna().unique():
                                             if c_val > 0: 
@@ -440,21 +454,21 @@ if uploaded_files:
                                                 ax_t.axhline(c_val, color="#555555", linestyle=":", linewidth=2.0, alpha=0.9)
                                                 add_to_label(c_val, "Cust USL", "#555555")
 
-                                    # 2. VẼ ĐƯỜNG MEAN & GIỚI HẠN NỘI BỘ (Sắc nét, Không mờ, Màu Tươi)
+                                    # 2. VẼ ĐƯỜNG MEAN & GIỚI HẠN NỘI BỘ 
                                     color_idx = 0
                                     for (lsl, usl), group in groups:
                                         c = THEME_COLORS[color_idx % len(THEME_COLORS)]
                                         mask = temp_plot_df.index.isin(group.index)
-                                        l_str = "N/A" if lsl == -1 else format_num(lsl)
-                                        u_str = "N/A" if usl == -1 else format_num(usl)
+                                        
+                                        spec_txt = format_spec(lsl, usl)
                                         
                                         group_mean = group[data_col].mean()
                                         
-                                        # Mean Line (Nét mạnh hơn)
+                                        # Mean Line
                                         ax_t.axhline(group_mean, color=c, linestyle="-", linewidth=2.0, alpha=0.7, label="Group Mean")
                                         add_to_label(group_mean, "Mean", c)
                                         
-                                        # Int Limits (Solid & Rõ nét)
+                                        # Int Limits
                                         if lsl != -1: 
                                             ax_t.axhline(lsl, color=c, linestyle="--", linewidth=2.0, alpha=1.0)
                                             add_to_label(lsl, "Int LSL", c)
@@ -462,16 +476,16 @@ if uploaded_files:
                                             ax_t.axhline(usl, color=c, linestyle="--", linewidth=2.0, alpha=1.0)
                                             add_to_label(usl, "Int USL", c)
                                             
-                                        # Data Points (Viền đen sắc sảo)
-                                        ax_t.scatter(x_coords[mask], plot_data[mask], color=c, s=45, edgecolor="black", linewidth=1.0, zorder=4, label=f"Data ({l_str}-{u_str})")
+                                        # Data Points (Sử dụng spec_txt thông minh)
+                                        ax_t.scatter(x_coords[mask], plot_data[mask], color=c, s=45, edgecolor="black", linewidth=1.0, zorder=4, label=f"Data ({spec_txt})")
                                         color_idx += 1
 
-                                    # 3. HIGHLIGHT ĐIỂM LỖI (Đỏ thuần, viền đen)
+                                    # 3. HIGHLIGHT ĐIỂM LỖI
                                     mask_out = (plot_data < lower_bound) | (plot_data > upper_bound)
                                     if mask_out.any():
                                         ax_t.scatter(x_coords[mask_out], plot_data[mask_out], color="#FF0000", s=60, edgecolor="#800000", linewidth=1.5, zorder=6, label="Out of Limit")
 
-                                    # 4. TỰ ĐỘNG CĂN TRỤC Y VÀ CHỐNG ĐÈ CHỮ LỀ PHẢI
+                                    # 4. CĂN TRỤC Y & LABEL CHỐNG ĐÈ
                                     valid_y = plot_data.dropna()
                                     ymin, ymax = valid_y.min(), valid_y.max()
                                     for val in label_dict.keys():
@@ -521,9 +535,8 @@ if uploaded_files:
                                     color_idx = 0
                                     for (lsl, usl), group in groups:
                                         hist_data.append(group[data_col].values)
-                                        l_str = "N/A" if lsl == -1 else format_num(lsl)
-                                        u_str = "N/A" if usl == -1 else format_num(usl)
-                                        hist_labels.append(f"Data (Spec: {l_str} - {u_str})")
+                                        spec_txt = format_spec(lsl, usl)
+                                        hist_labels.append(f"Data ({spec_txt})")
                                         color_idx += 1
                                         
                                     if len(hist_data) > 1:
