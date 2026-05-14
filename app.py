@@ -182,7 +182,7 @@ if uploaded_files:
                         lsl, usl = spec
                         spec_str = f"{format_num(lsl) if lsl != -1 else 'N/A'} - {format_num(usl) if usl != -1 else 'N/A'}"
                         
-                        st.markdown(f"<h3 style='color: #D35400;'>📌 Phân tích nhóm Spec: {spec_str}</h3>", unsafe_allow_html=True)
+                        st.markdown(f"<h3 style='color: #D35400;'>📌 Spec Group Analysis: {spec_str}</h3>", unsafe_allow_html=True)
 
                         group_ma = temp_ma[temp_ma['Spec_Group'] == spec]
                         group_son = temp_son[temp_son['Spec_Group'] == spec]
