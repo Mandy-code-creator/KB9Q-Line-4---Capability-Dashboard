@@ -54,7 +54,6 @@ def get_limit_series(df, keyword, limit_type, category, length):
     """Lấy mảng giới hạn chi tiết cho từng dòng để vẽ biểu đồ động. Loại bỏ giới hạn <= 0."""
     col = next((c for c in df.columns if keyword in c and limit_type in c.lower() and category in c), None)
     if col:
-        # Chuyển đổi sang số. mask(s <= 0, np.nan) sẽ biến các số 0 thành NaN để KHÔNG VẼ
         s = pd.to_numeric(df[col], errors='coerce')
         s = s.mask(s <= 0, np.nan).ffill().bfill()
         return s
@@ -100,7 +99,6 @@ if uploaded_files:
 
     file_names = [f.name for f in uploaded_files]
     
-    # GLOBAL FILE ASSIGNMENT IN SIDEBAR
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 🏭 ASSIGN LINE DATA")
     ma_filename = st.sidebar.selectbox("Select Galvanizing File:", file_names, key="ma_sel")
@@ -114,9 +112,6 @@ if uploaded_files:
         "Cross-Line Comparison 🔀"
     ])
 
-    # =========================================================================
-    # MODE 1: CROSS-LINE COMPARISON
-    # =========================================================================
     if view_mode == "Cross-Line Comparison 🔀":
         st.title("🔀 Statistical Process Shift & Limits Recommendation")
         
@@ -223,9 +218,6 @@ if uploaded_files:
                     buf_comp = export_to_word([fig_comp], [f"Distribution Shift Chart - {selected_label}"])
                     st.download_button(label=f"📥 Download Chart ({selected_label})", data=buf_comp, file_name=f"ShiftPlot_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_cross_{selected_label}")
 
-    # =========================================================================
-    # MODE 2: TABBED ANALYSIS FOR INDIVIDUAL LINES
-    # =========================================================================
     else:
         st.title(f"📊 {view_mode}")
         
@@ -336,7 +328,6 @@ if uploaded_files:
                             plot_data = plot_df[data_col]
                             n = len(plot_data)
 
-                            # --- TÍNH TOÁN GIỚI HẠN ĐỘNG CHO TỪNG CUỘN ---
                             int_lsl_series = get_limit_series(plot_df, zh_key, "min", "管制", n)
                             int_usl_series = get_limit_series(plot_df, zh_key, "max", "管制", n)
                             cust_lsl_series = get_limit_series(plot_df, zh_key, "min", "客戶要求", n)
@@ -345,14 +336,14 @@ if uploaded_files:
                             if is_coating_line and short_key == "YPE":
                                 int_lsl_series = pd.Series([4.0] * n)
                             
-                            # TẠO NHÓM DỮ LIỆU CHUNG (Dùng cho vẽ phân loại Màu)
+                            # TẠO NHÓM DỮ LIỆU - CHỈ NHÓM THEO GIỚI HẠN NỘI BỘ (Chống 2 màu cho 1 Legend)
                             temp_plot_df = plot_df.copy()
                             temp_plot_df['LSL_temp'] = int_lsl_series.fillna(-1).values
                             temp_plot_df['USL_temp'] = int_usl_series.fillna(-1).values
                             temp_plot_df['CLSL_temp'] = cust_lsl_series.fillna(-1).values
                             temp_plot_df['CUSL_temp'] = cust_usl_series.fillna(-1).values
                             
-                            groups = temp_plot_df.groupby(['LSL_temp', 'USL_temp', 'CLSL_temp', 'CUSL_temp'])
+                            groups = temp_plot_df.groupby(['LSL_temp', 'USL_temp'])
                             trend_colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2']
                             # -----------------------------------------------
 
@@ -374,33 +365,35 @@ if uploaded_files:
                                     fig_t, ax_t = plt.subplots(figsize=(12, 6))
                                     x_coords = np.arange(1, n+1)
                                     
-                                    # Đường xương sống nối tất cả các điểm mờ nhạt
                                     ax_t.plot(x_coords, plot_data, color="#CFD8DC", linestyle="-", linewidth=1.5, zorder=1)
 
                                     color_idx = 0
-                                    for (lsl, usl, clsl, cusl), group in groups:
+                                    for (lsl, usl), group in groups:
                                         c = trend_colors[color_idx % len(trend_colors)]
                                         mask = temp_plot_df.index.isin(group.index)
                                         
                                         l_str = "N/A" if lsl == -1 else format_num(lsl)
                                         u_str = "N/A" if usl == -1 else format_num(usl)
                                         
-                                        # Điểm dữ liệu được gán màu theo loại Spec
+                                        # Vẽ điểm Scatter
                                         ax_t.scatter(x_coords[mask], plot_data[mask], color=c, s=50, edgecolor="black", zorder=3, label=f"Data & Lim ({l_str}-{u_str})")
                                         
-                                        # Vẽ giới hạn bằng đoạn thẳng (chỉ trải dài trên vị trí điểm tương ứng)
+                                        # Vẽ Line giới hạn nội bộ
                                         if lsl != -1: 
                                             ax_t.plot(x_coords, np.where(mask, lsl, np.nan), color=c, linestyle="--", linewidth=2.5)
                                         if usl != -1: 
                                             ax_t.plot(x_coords, np.where(mask, usl, np.nan), color=c, linestyle="--", linewidth=2.5)
-                                        if clsl != -1: 
-                                            ax_t.plot(x_coords, np.where(mask, clsl, np.nan), color=c, linestyle="-", linewidth=1.5, alpha=0.5)
-                                        if cusl != -1: 
-                                            ax_t.plot(x_coords, np.where(mask, cusl, np.nan), color=c, linestyle="-", linewidth=1.5, alpha=0.5)
+                                            
+                                        # Vẽ Cust Limit (Lọc mảng không nhóm)
+                                        clsl_mask = mask & (temp_plot_df['CLSL_temp'] != -1)
+                                        cusl_mask = mask & (temp_plot_df['CUSL_temp'] != -1)
+                                        if clsl_mask.any(): 
+                                            ax_t.plot(x_coords, np.where(clsl_mask, temp_plot_df['CLSL_temp'], np.nan), color=c, linestyle="-", linewidth=1.5, alpha=0.5)
+                                        if cusl_mask.any(): 
+                                            ax_t.plot(x_coords, np.where(cusl_mask, temp_plot_df['CUSL_temp'], np.nan), color=c, linestyle="-", linewidth=1.5, alpha=0.5)
                                             
                                         color_idx += 1
 
-                                    # Xác định điểm vượt giới hạn nội bộ
                                     lower_bound = int_lsl_series.fillna(-np.inf)
                                     upper_bound = int_usl_series.fillna(np.inf)
                                     mask_out = (plot_data < lower_bound) | (plot_data > upper_bound)
@@ -415,7 +408,12 @@ if uploaded_files:
                                     ax_t.set_xlabel("Coil Sequence")
                                     ax_t.set_ylabel(f"{selected_label} Value")
                                     ax_t.set_title(f"{selected_label} Trend Analysis (N={n})", pad=20)
-                                    ax_t.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), ncol=4, fontsize=9)
+                                    
+                                    # Lọc bỏ Label bị trùng lặp trên Trend Chart
+                                    handles, labels = ax_t.get_legend_handles_labels()
+                                    by_label = dict(zip(labels, handles))
+                                    ax_t.legend(by_label.values(), by_label.keys(), loc="upper center", bbox_to_anchor=(0.5, -0.15), ncol=4, fontsize=9)
+                                    
                                     apply_full_border(ax_t); plt.tight_layout(); st.pyplot(fig_t)
                                     
                                     buf_t = export_to_word([fig_t], [f"Trend Analysis - {selected_label}"])
@@ -424,10 +422,9 @@ if uploaded_files:
                                 with tab_dist:
                                     fig_d, ax_d = plt.subplots(figsize=(12, 6))
                                     
-                                    # Histogram nhiều màu phân loại theo Spec
                                     hist_data, hist_labels = [], []
                                     color_idx = 0
-                                    for (lsl, usl, clsl, cusl), group in groups:
+                                    for (lsl, usl), group in groups:
                                         hist_data.append(group[data_col].values)
                                         l_str = "N/A" if lsl == -1 else format_num(lsl)
                                         u_str = "N/A" if usl == -1 else format_num(usl)
@@ -452,7 +449,6 @@ if uploaded_files:
                                     ax_pdf.plot(xs, y_vals, color="#1E3A8A", lw=3, label="Normal Fit")
                                     ax_pdf.set_yticks([])
                                     
-                                    # --- THUẬT TOÁN NESTING CHỐNG ĐÈ LABEL ---
                                     lines_to_draw = []
                                     def register_vline(val, color, ls, label):
                                         if val is not None and val > 0:
@@ -500,7 +496,6 @@ if uploaded_files:
                                         
                                         ax_d.text(val, y_pos, f"{val:.1f}", color=c, ha='center', va='bottom', 
                                                   transform=trans, fontweight='bold', fontsize=10, bbox=bbox_props)
-                                    # -----------------------------------------
                                     
                                     ax_d.set_title(f"{selected_label} Distribution (N={n})", pad=110) 
                                     
@@ -540,21 +535,18 @@ if uploaded_files:
                                 fig_imr, ax_i = plt.subplots(figsize=(12, 6)) 
                                 x_coords_spc = np.arange(1, n+1)
                                 
-                                # Xương sống SPC
                                 ax_i.plot(x_coords_spc, plot_data, color="#CFD8DC", linestyle="-", linewidth=1.5, zorder=1)
-                                ax_i.axhline(mu, color="blue", ls="-", lw=2, alpha=0.5, label="Overall Mean")
+                                ax_i.axhline(mu, color="blue", ls="-", lw=2, alpha=0.5, label="Theo. Mean")
                                 
                                 color_idx = 0
-                                for (lsl, usl, clsl, cusl), group in groups:
+                                for (lsl, usl), group in groups:
                                     c = trend_colors[color_idx % len(trend_colors)]
                                     mask = temp_plot_df.index.isin(group.index)
                                     l_str = "N/A" if lsl == -1 else format_num(lsl)
                                     u_str = "N/A" if usl == -1 else format_num(usl)
                                     
-                                    # Vẽ điểm dữ liệu SPC
                                     ax_i.scatter(x_coords_spc[mask], plot_data[mask], color=c, s=50, edgecolor="black", zorder=3, label=f"Data & Lim ({l_str}-{u_str})")
                                     
-                                    # Đoạn đứt khúc cho Int Limit
                                     if lsl != -1: 
                                         ax_i.plot(x_coords_spc, np.where(mask, lsl, np.nan), color=c, linestyle="--", linewidth=2.5)
                                     if usl != -1: 
@@ -570,7 +562,12 @@ if uploaded_files:
                                 ax_i.set_xlabel("Coil Sequence")
                                 ax_i.set_ylabel(f"{selected_label} Value")
                                 ax_i.set_title(f"I-Chart: Control Limit Optimization ({selected_label})", pad=20)
-                                ax_i.legend(loc="upper left", bbox_to_anchor=(1, 1))
+                                
+                                # Lọc Legend
+                                handles, labels = ax_i.get_legend_handles_labels()
+                                by_label = dict(zip(labels, handles))
+                                ax_i.legend(by_label.values(), by_label.keys(), loc="upper left", bbox_to_anchor=(1, 1))
+                                
                                 apply_full_border(ax_i); plt.tight_layout(); st.pyplot(fig_imr)
                                 
                                 buf_i = export_to_word([fig_imr], [f"SPC I-Chart Analysis - {selected_label}"])
