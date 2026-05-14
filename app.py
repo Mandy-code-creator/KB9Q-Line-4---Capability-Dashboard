@@ -113,7 +113,7 @@ if uploaded_files:
     ])
 
     # =========================================================================
-    # MODE 1: CROSS-LINE COMPARISON (PHÂN TÍCH THEO ĐỘ DÀY)
+    # MODE 1: CROSS-LINE COMPARISON
     # =========================================================================
     if view_mode == "Cross-Line Comparison 🔀":
         st.title("🔀 Statistical Process Shift & Limits Recommendation")
@@ -151,7 +151,6 @@ if uploaded_files:
                     temp_son['val'] = pd.to_numeric(temp_son[col_son], errors='coerce')
                     temp_son = temp_son.dropna(subset=['val']).reset_index(drop=True)
 
-                    # --- TÌM VÀ PHÂN NHÓM THEO ĐỘ DÀY (THICKNESS) ---
                     thick_col_ma = next((c for c in temp_ma.columns if "厚度" in str(c) or "thickness" in str(c).lower()), None)
                     thick_col_son = next((c for c in temp_son.columns if "厚度" in str(c) or "thickness" in str(c).lower()), None)
 
@@ -174,7 +173,6 @@ if uploaded_files:
                     if not groups_to_compare:
                         st.info(f"ℹ️ Không tìm thấy dữ liệu phân chia độ dày cho {selected_label}. Chuyển sang chế độ phân tích tổng thể.")
                         groups_to_compare.append(("Toàn bộ dữ liệu (Global)", temp_ma, temp_son))
-                    # -----------------------------------------------
 
                     for group_info in groups_to_compare:
                         group_name = group_info[0]
@@ -199,7 +197,6 @@ if uploaded_files:
                         
                         delta = mean_son - mean_ma if pd.notnull(mean_son) and pd.notnull(mean_ma) else 0
 
-                        # Lấy giới hạn nội bộ phổ biến nhất (Mode) của nhóm độ dày này để khuyến nghị
                         son_lsl_series = get_limit_series(group_son, zh_key, "min", "管制", len(group_son))
                         son_usl_series = get_limit_series(group_son, zh_key, "max", "管制", len(group_son))
                         
@@ -218,8 +215,8 @@ if uploaded_files:
                         st.markdown(f"**🔄 Optimal Limits Recommendation**")
                         delta_data = [{
                             "Phân loại": group_name,
-                            "Galv. Mean (Theo.)": format_num(mean_ma),
-                            "Coating Mean (Theo.)": format_num(mean_son),
+                            "Galv. Theo. Value": format_num(mean_ma),
+                            "Coating Theo. Value": format_num(mean_son),
                             "Shift (Δ)": format_num(delta),
                             "Current Coating LSL (Mode)": format_num(lsl_son) if lsl_son is not None else "N/A",
                             "Current Coating USL (Mode)": format_num(usl_son) if usl_son is not None else "N/A",
@@ -398,11 +395,6 @@ if uploaded_files:
                                 groups = temp_plot_df.groupby(['LSL_temp', 'USL_temp'])
                                 trend_colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2']
                                 
-                                mean_series = pd.Series(index=temp_plot_df.index, dtype=float)
-                                for (lsl, usl), group in groups:
-                                    mean_series.loc[group.index] = group[data_col].mean()
-                                mean_series = mean_series.ffill().bfill()
-
                                 df_calc = plot_df.copy()
                                 grade_col = next((c for c in df.columns if any(kw in str(c).lower() for kw in ['grade', '等级', '等級', 'cấp', 'quality', 'loại'])), None)
                                 if grade_col:
@@ -420,53 +412,15 @@ if uploaded_files:
                                     fig_t, ax_t = plt.subplots(figsize=(13, 6.5)) 
                                     x_coords = np.arange(1, n+1)
 
+                                    # Lưu bounds để check Out of Limit
                                     if not int_lsl_series.isna().all() and not int_usl_series.isna().all():
                                         lower_bound = int_lsl_series.ffill().bfill()
                                         upper_bound = int_usl_series.ffill().bfill()
-                                        ax_t.fill_between(x_coords, lower_bound, upper_bound, color='#EAFAF1', alpha=0.9, step='post', label="In-Spec Corridor")
-                                        ax_t.step(x_coords, lower_bound, color="#27AE60", linestyle="-", linewidth=1.5, alpha=0.8, where='post')
-                                        ax_t.step(x_coords, upper_bound, color="#27AE60", linestyle="-", linewidth=1.5, alpha=0.8, where='post')
                                     else:
                                         lower_bound = pd.Series([-np.inf] * n)
                                         upper_bound = pd.Series([np.inf] * n)
 
-                                    if not cust_lsl_series.isna().all():
-                                        c_lower = cust_lsl_series.ffill().bfill()
-                                        ax_t.step(x_coords, c_lower, color="#7F8C8D", linestyle="--", linewidth=2, alpha=0.85, where='post', label="Cust Limit")
-                                    if not cust_usl_series.isna().all():
-                                        c_upper = cust_usl_series.ffill().bfill()
-                                        ax_t.step(x_coords, c_upper, color="#7F8C8D", linestyle="--", linewidth=2, alpha=0.85, where='post')
-
-                                    color_idx = 0
-                                    for (lsl, usl), group in groups:
-                                        c = trend_colors[color_idx % len(trend_colors)]
-                                        mask = temp_plot_df.index.isin(group.index)
-                                        l_str = "N/A" if lsl == -1 else format_num(lsl)
-                                        u_str = "N/A" if usl == -1 else format_num(usl)
-                                        
-                                        group_mean = group[data_col].mean()
-                                        ax_t.plot(x_coords, np.where(mask, group_mean, np.nan), color="blue", linestyle="-", linewidth=1.5, alpha=0.6, label="Group Mean")
-                                        
-                                        ax_t.scatter(x_coords[mask], plot_data[mask], color=c, s=40, edgecolor="black", linewidth=0.8, zorder=4, label=f"Data ({l_str}-{u_str})")
-                                        color_idx += 1
-
-                                    mask_out = (plot_data < lower_bound) | (plot_data > upper_bound)
-                                    if mask_out.any():
-                                        ax_t.scatter(x_coords[mask_out], plot_data[mask_out], color="#E74C3C", s=60, edgecolor="darkred", linewidth=1.5, zorder=6, label="Out of Limit")
-
-                                    valid_y = plot_data.dropna()
-                                    ymin, ymax = valid_y.min(), valid_y.max()
-                                    
-                                    for s in [int_lsl_series, int_usl_series, cust_lsl_series, cust_usl_series, mean_series]:
-                                        s_valid = s[s > 0].dropna()
-                                        if not s_valid.empty:
-                                            ymin = min(ymin, s_valid.min())
-                                            ymax = max(ymax, s_valid.max())
-                                            
-                                    y_range = ymax - ymin if ymax > ymin else 10
-                                    ax_t.set_ylim(ymin - y_range*0.12, ymax + y_range*0.12)
-                                    ax_t.set_xlim(0, n * 1.18)
-
+                                    # Hàm thu thập Label để gom bên lề phải
                                     label_dict = {}
                                     def add_to_label(val, name, color):
                                         if pd.isna(val) or val <= 0: return
@@ -475,16 +429,58 @@ if uploaded_files:
                                         if not any(item['name'] == name for item in label_dict[val]):
                                             label_dict[val].append({'name': name, 'color': color})
 
+                                    # 1. ĐƯỜNG GIỚI HẠN KHÁCH HÀNG (Kéo dài hết đồ thị)
                                     if not cust_lsl_series.isna().all():
-                                        for v in cust_lsl_series.dropna().unique(): add_to_label(v, "Cust LSL", "#7F8C8D")
+                                        for c_val in cust_lsl_series.dropna().unique():
+                                            if c_val > 0: 
+                                                ax_t.axhline(c_val, color="#7F8C8D", linestyle=":", linewidth=1.5, alpha=0.7)
+                                                add_to_label(c_val, "Cust LSL", "#7F8C8D")
                                     if not cust_usl_series.isna().all():
-                                        for v in cust_usl_series.dropna().unique(): add_to_label(v, "Cust USL", "#7F8C8D")
-                                    if not int_lsl_series.isna().all():
-                                        for v in int_lsl_series.dropna().unique(): add_to_label(v, "Int LSL", "#27AE60")
-                                    if not int_usl_series.isna().all():
-                                        for v in int_usl_series.dropna().unique(): add_to_label(v, "Int USL", "#27AE60")
-                                    for v in mean_series.dropna().unique():
-                                        add_to_label(v, "Mean", "blue")
+                                        for c_val in cust_usl_series.dropna().unique():
+                                            if c_val > 0: 
+                                                ax_t.axhline(c_val, color="#7F8C8D", linestyle=":", linewidth=1.5, alpha=0.7)
+                                                add_to_label(c_val, "Cust USL", "#7F8C8D")
+
+                                    # 2. VẼ ĐIỂM DỮ LIỆU, MEAN, & GIỚI HẠN NỘI BỘ (Kéo dài hết đồ thị theo màu)
+                                    color_idx = 0
+                                    for (lsl, usl), group in groups:
+                                        c = trend_colors[color_idx % len(trend_colors)]
+                                        mask = temp_plot_df.index.isin(group.index)
+                                        l_str = "N/A" if lsl == -1 else format_num(lsl)
+                                        u_str = "N/A" if usl == -1 else format_num(usl)
+                                        
+                                        # Mean đứt đoạn tại đúng khu vực dữ liệu của nhóm
+                                        group_mean = group[data_col].mean()
+                                        ax_t.plot(x_coords, np.where(mask, group_mean, np.nan), color=c, linestyle="-", linewidth=1.5, alpha=0.5, label="Group Mean")
+                                        add_to_label(group_mean, "Theo. Value", c)
+                                        
+                                        # Đường Int Limit kéo liền ngang qua đồ thị (Dễ nhìn, phân biệt bằng màu)
+                                        if lsl != -1: 
+                                            ax_t.axhline(lsl, color=c, linestyle="--", linewidth=1.5, alpha=0.8)
+                                            add_to_label(lsl, "Int LSL", c)
+                                        if usl != -1: 
+                                            ax_t.axhline(usl, color=c, linestyle="--", linewidth=1.5, alpha=0.8)
+                                            add_to_label(usl, "Int USL", c)
+                                            
+                                        # Data points
+                                        ax_t.scatter(x_coords[mask], plot_data[mask], color=c, s=40, edgecolor="black", linewidth=0.8, zorder=4, label=f"Data ({l_str}-{u_str})")
+                                        color_idx += 1
+
+                                    # 3. HIGHLIGHT CÁC ĐIỂM OUT OF LIMIT
+                                    mask_out = (plot_data < lower_bound) | (plot_data > upper_bound)
+                                    if mask_out.any():
+                                        ax_t.scatter(x_coords[mask_out], plot_data[mask_out], color="#E74C3C", s=60, edgecolor="darkred", linewidth=1.5, zorder=6, label="Out of Limit")
+
+                                    # 4. AUTO-ZOOM TRỤC Y VÀ CĂN LỀ TEXT LỀ PHẢI
+                                    valid_y = plot_data.dropna()
+                                    ymin, ymax = valid_y.min(), valid_y.max()
+                                    for val in label_dict.keys():
+                                        ymin = min(ymin, val)
+                                        ymax = max(ymax, val)
+                                            
+                                    y_range = ymax - ymin if ymax > ymin else 10
+                                    ax_t.set_ylim(ymin - y_range*0.12, ymax + y_range*0.12)
+                                    ax_t.set_xlim(0, n * 1.18)
 
                                     sorted_vals = sorted(label_dict.keys())
                                     min_y_dist = y_range * 0.05  
@@ -500,10 +496,8 @@ if uploaded_files:
                                             y_draw = last_y + min_y_dist
                                             
                                         ax_t.plot([n, n + (n*0.02)], [val, y_draw], color="black", linestyle="-", lw=0.8, alpha=0.3)
-                                        
                                         bbox = dict(boxstyle="round,pad=0.3", fc="#FDFEFE", ec=main_color, alpha=0.9, lw=1.2)
                                         ax_t.text(n + (n*0.025), y_draw, f"{names_str}: {val:.1f}", color=main_color, va='center', ha='left', fontsize=9, bbox=bbox, fontweight='bold')
-                                        
                                         last_y = y_draw
 
                                     ax_t.set_xlabel("Coil Sequence")
@@ -512,7 +506,8 @@ if uploaded_files:
                                     
                                     handles, labels = ax_t.get_legend_handles_labels()
                                     by_label = dict(zip(labels, handles))
-                                    ax_t.legend(by_label.values(), by_label.keys(), loc="upper center", bbox_to_anchor=(0.5, -0.15), ncol=4, fontsize=9)
+                                    clean_dict = {k: v for k, v in by_label.items() if not k.startswith('_')}
+                                    ax_t.legend(clean_dict.values(), clean_dict.keys(), loc="upper center", bbox_to_anchor=(0.5, -0.15), ncol=4, fontsize=9)
                                     
                                     apply_full_border(ax_t); plt.tight_layout(); st.pyplot(fig_t)
                                     
@@ -562,7 +557,11 @@ if uploaded_files:
                                                 label = base_label if i == 0 else None
                                                 register_vline(val, color, ls, label)
 
-                                    register_multiple(mean_series, "blue", "-", "Mean")
+                                    # Lấy mean_series.dropna().unique() thay vì truyền thẳng mảng
+                                    mean_unique_vals = mean_series.dropna().unique()
+                                    for v in mean_unique_vals:
+                                        register_vline(v, "blue", "-", "Theo. Value")
+                                        
                                     register_multiple(cust_lsl_series, "green", "-", "Cust LSL")
                                     register_multiple(cust_usl_series, "green", "-", "Cust USL")
                                     register_multiple(int_lsl_series, "red", "--", "Int LSL")
@@ -679,7 +678,6 @@ if uploaded_files:
                                         
                                         ax_i.scatter(x_coords_spc[mask], plot_data[mask], color=c, s=50, edgecolor="black", zorder=3, label=f"Data ({g_name})")
                                         
-                                        # Vẽ Mean riêng cho nhóm dạng Line đứt đoạn
                                         ax_i.plot(x_coords_spc, np.where(mask, g_mu, np.nan), color=c, linestyle="-", linewidth=2, alpha=0.7)
                                         
                                         ax_i.plot(x_coords_spc, np.where(mask, g_mu + k_std*g_sig, np.nan), color=c, linestyle="--", linewidth=1.5)
