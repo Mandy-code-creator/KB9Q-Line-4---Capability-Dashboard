@@ -375,37 +375,38 @@ if uploaded_files:
                             plot_data = plot_df[data_col]
                             n = len(plot_data)
 
-                            int_lsl_series = get_limit_series(plot_df, zh_key, "min", "管制", n)
-                            int_usl_series = get_limit_series(plot_df, zh_key, "max", "管制", n)
-                            cust_lsl_series = get_limit_series(plot_df, zh_key, "min", "客戶要求", n)
-                            cust_usl_series = get_limit_series(plot_df, zh_key, "max", "客戶要求", n)
-
-                            if is_coating_line and short_key == "YPE":
-                                int_lsl_series = pd.Series([4.0] * n)
-                            
-                            temp_plot_df = plot_df.copy()
-                            temp_plot_df['LSL_temp'] = int_lsl_series.fillna(-1).values
-                            temp_plot_df['USL_temp'] = int_usl_series.fillna(-1).values
-                            
-                            groups = temp_plot_df.groupby(['LSL_temp', 'USL_temp'])
-                            trend_colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2']
-                            
-                            mean_series = pd.Series(index=temp_plot_df.index, dtype=float)
-                            for (lsl, usl), group in groups:
-                                mean_series.loc[group.index] = group[data_col].mean()
-                            mean_series = mean_series.ffill().bfill()
-
-                            df_calc = plot_df.copy()
-                            grade_col = next((c for c in df.columns if any(kw in str(c).lower() for kw in ['grade', '等级', '等級', 'cấp', 'quality', 'loại'])), None)
-                            if grade_col:
-                                f_df = df_calc[df_calc[grade_col].astype(str).str.upper().str.contains(r'A|B', regex=True, na=False)]
-                                if not f_df.empty: df_calc = f_df
-                            
-                            calc_data = df_calc[data_col].dropna()
-                            mu = calc_data.mean()
-                            sigma_fixed = calc_data.std(ddof=1)
-
                             if view_mode == "Process Analytics":
+                                # TÍNH THEO NHÓM SPEC (CHO TREND & DIST)
+                                int_lsl_series = get_limit_series(plot_df, zh_key, "min", "管制", n)
+                                int_usl_series = get_limit_series(plot_df, zh_key, "max", "管制", n)
+                                cust_lsl_series = get_limit_series(plot_df, zh_key, "min", "客戶要求", n)
+                                cust_usl_series = get_limit_series(plot_df, zh_key, "max", "客戶要求", n)
+
+                                if is_coating_line and short_key == "YPE":
+                                    int_lsl_series = pd.Series([4.0] * n)
+                                
+                                temp_plot_df = plot_df.copy()
+                                temp_plot_df['LSL_temp'] = int_lsl_series.fillna(-1).values
+                                temp_plot_df['USL_temp'] = int_usl_series.fillna(-1).values
+                                
+                                groups = temp_plot_df.groupby(['LSL_temp', 'USL_temp'])
+                                trend_colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2']
+                                
+                                mean_series = pd.Series(index=temp_plot_df.index, dtype=float)
+                                for (lsl, usl), group in groups:
+                                    mean_series.loc[group.index] = group[data_col].mean()
+                                mean_series = mean_series.ffill().bfill()
+
+                                df_calc = plot_df.copy()
+                                grade_col = next((c for c in df.columns if any(kw in str(c).lower() for kw in ['grade', '等级', '等級', 'cấp', 'quality', 'loại'])), None)
+                                if grade_col:
+                                    f_df = df_calc[df_calc[grade_col].astype(str).str.upper().str.contains(r'A|B', regex=True, na=False)]
+                                    if not f_df.empty: df_calc = f_df
+                                
+                                calc_data = df_calc[data_col].dropna()
+                                mu = calc_data.mean()
+                                sigma_fixed = calc_data.std(ddof=1)
+
                                 tab_trend, tab_dist = st.tabs([f"📈 {selected_label} Trend", f"📊 {selected_label} Distribution"])
                                 ucl_v1, lcl_v1 = mu + 3*sigma_fixed, mu - 3*sigma_fixed
 
@@ -604,10 +605,31 @@ if uploaded_files:
                                     st.download_button(label=f"📥 Download Dist Chart ({selected_label})", data=buf_d, file_name=f"Dist_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_dist_{fname}_{selected_label}")
 
                             elif view_mode == "SPC Control Charts (I-MR)":
-                                st.markdown(f"#### 📐 Bảng thông số Kiểm soát (Tính riêng theo từng Spec)")
+                                # TÍNH THEO NHÓM ĐỘ DÀY (THICKNESS) CHO SPC MÀ THÔI
+                                thick_col = next((c for c in df.columns if "厚度" in str(c) or "thickness" in str(c).lower()), None)
                                 
+                                spc_groups = []
+                                temp_spc_df = plot_df.copy()
+                                
+                                if thick_col:
+                                    temp_spc_df['Thick_Num'] = pd.to_numeric(temp_spc_df[thick_col], errors='coerce')
+                                    
+                                    g1 = temp_spc_df[temp_spc_df['Thick_Num'] <= 0.60]
+                                    g2 = temp_spc_df[temp_spc_df['Thick_Num'] > 0.60]
+                                    g_nan = temp_spc_df[temp_spc_df['Thick_Num'].isna()]
+                                    
+                                    if not g1.empty: spc_groups.append(("Thickness <= 0.60", g1))
+                                    if not g2.empty: spc_groups.append(("Thickness > 0.60", g2))
+                                    if not g_nan.empty: spc_groups.append(("Unknown Thickness", g_nan))
+                                    
+                                    st.markdown(f"#### 📐 Bảng thông số Kiểm soát (Phân loại theo Độ dày)")
+                                else:
+                                    spc_groups.append(("Toàn bộ dữ liệu", temp_spc_df))
+                                    st.warning("⚠️ Không tìm thấy cột '訂單厚度' (Độ dày). Hệ thống đang tính chung cho toàn bộ dữ liệu.")
+                                    st.markdown(f"#### 📐 Bảng thông số Kiểm soát")
+
                                 spc_stats = []
-                                for (lsl, usl), group in groups:
+                                for g_name, group in spc_groups:
                                     g_data = group[data_col].dropna()
                                     if len(g_data) > 1:
                                         g_n = len(g_data)
@@ -616,11 +638,8 @@ if uploaded_files:
                                         g_q1, g_q3 = g_data.quantile(0.25), g_data.quantile(0.75)
                                         g_iqr = g_q3 - g_q1
                                         
-                                        l_str = "N/A" if lsl == -1 else format_num(lsl)
-                                        u_str = "N/A" if usl == -1 else format_num(usl)
-                                        
                                         spc_stats.append({
-                                            "Spec": f"{l_str} - {u_str}",
+                                            "Nhóm (Group)": g_name,
                                             "N": g_n,
                                             "Mean": format_num(g_mu),
                                             "Sigma": format_num(g_sig),
@@ -641,13 +660,12 @@ if uploaded_files:
                                 ax_i.plot(x_coords_spc, plot_data, color="#CFD8DC", linestyle="-", linewidth=1.5, zorder=1)
                                 
                                 color_idx = 0
-                                for (lsl, usl), group in groups:
+                                trend_colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
+                                
+                                for g_name, group in spc_groups:
                                     c = trend_colors[color_idx % len(trend_colors)]
-                                    mask = temp_plot_df.index.isin(group.index)
+                                    mask = temp_spc_df.index.isin(group.index)
                                     g_data = group[data_col].dropna()
-                                    
-                                    l_str = "N/A" if lsl == -1 else format_num(lsl)
-                                    u_str = "N/A" if usl == -1 else format_num(usl)
                                     
                                     if len(g_data) > 1:
                                         g_mu = g_data.mean()
@@ -656,7 +674,7 @@ if uploaded_files:
                                         g_iqr = g_q3 - g_q1
                                         
                                         # Điểm dữ liệu
-                                        ax_i.scatter(x_coords_spc[mask], plot_data[mask], color=c, s=50, edgecolor="black", zorder=3, label=f"Data ({l_str}-{u_str})")
+                                        ax_i.scatter(x_coords_spc[mask], plot_data[mask], color=c, s=50, edgecolor="black", zorder=3, label=f"Data ({g_name})")
                                         
                                         # Group Mean (Nét liền)
                                         ax_i.plot(x_coords_spc, np.where(mask, g_mu, np.nan), color=c, linestyle="-", linewidth=2, alpha=0.7)
@@ -673,9 +691,9 @@ if uploaded_files:
                                 
                                 ax_i.set_xlabel("Coil Sequence")
                                 ax_i.set_ylabel(f"{selected_label} Value")
-                                ax_i.set_title(f"I-Chart: Dynamic Control Limits by Spec ({selected_label})", pad=20)
+                                ax_i.set_title(f"I-Chart: Dynamic Control Limits ({selected_label})", pad=20)
                                 
-                                # Tạo Legend custom thông minh, gộp ý nghĩa các đường nét lại
+                                # Tạo Legend custom thông minh
                                 custom_lines = [
                                     mlines.Line2D([], [], color='black', linestyle='-', lw=2, alpha=0.7, label='Group Mean'),
                                     mlines.Line2D([], [], color='black', linestyle='--', lw=1.5, label=f'UCL/LCL ({k_std}σ)'),
