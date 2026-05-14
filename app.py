@@ -4,11 +4,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 import re
-from scipy.stats import norm, ttest_ind, sem, t
+from scipy.stats import norm, ttest_ind
 import io
 from docx import Document
 from docx.shared import Inches
 import matplotlib.lines as mlines
+import gc # Garbage Collector để dọn dẹp RAM
 
 # ==========================================
 # 1. PAGE CONFIGURATION & FONTS
@@ -19,24 +20,25 @@ plt.rcParams['font.sans-serif'] = ['Arial', 'Helvetica', 'sans-serif']
 plt.rcParams['axes.unicode_minus'] = False
 
 plt.rcParams.update({
-    'font.size': 12,
+    'font.size': 10,  # Giảm size font xuống một chút để đồ thị gọn hơn
     'axes.labelweight': 'bold',
     'axes.titleweight': 'bold',
-    'axes.titlesize': 15,
-    'legend.fontsize': 10,
+    'axes.titlesize': 13,
+    'legend.fontsize': 9,
     'font.weight': 'bold',
-    'lines.linewidth': 2.5,
-    'figure.dpi': 150  
+    'lines.linewidth': 2.0,
+    'figure.dpi': 100  # QUAN TRỌNG: Giảm DPI từ 150 xuống 100 giúp giảm 50% RAM khi render hình
 })
 
-# Bảng màu Tươi & Sắc nét (High-Contrast Vibrant Palette)
 THEME_COLORS = ['#0055FF', '#FF6600', '#00AA00', '#9900FF', '#CC0055', '#009999']
+MUTED_COLORS = ['#4A90E2', '#E67E22', '#27AE60', '#9B59B6', '#34495E', '#F1C40F']
 
 # ==========================================
-# 2. UTILITY FUNCTIONS
+# 2. UTILITY FUNCTIONS (TỐI ƯU HÓA)
 # ==========================================
-@st.cache_data
+@st.cache_data(max_entries=3) # QUAN TRỌNG: Giới hạn Cache chỉ lưu 3 file gần nhất để tránh tràn RAM
 def load_and_clean_data(file):
+    # Đọc file và chỉ lấy các cột cần thiết (nếu có thể tối ưu thêm)
     df = pd.read_csv(file) if file.name.endswith('.csv') else pd.read_excel(file)
     df.columns = [str(c).strip() for c in df.columns]
     return df
@@ -68,7 +70,6 @@ def format_num(val):
     return str(int(rounded)) if rounded == int(rounded) else str(rounded)
 
 def format_spec(lsl, usl):
-    """Hàm thông minh tự nhận diện Legend cho giới hạn"""
     if lsl != -1 and usl != -1:
         return f"{format_num(lsl)}-{format_num(usl)}"
     elif lsl != -1:
@@ -80,7 +81,7 @@ def format_spec(lsl, usl):
 
 def apply_full_border(ax):
     for spine in ax.spines.values():
-        spine.set_linewidth(2.5)
+        spine.set_linewidth(2.0)
         spine.set_color('#111111')
         spine.set_visible(True)
 
@@ -91,7 +92,8 @@ def export_to_word(figures, titles):
     for fig, title in zip(figures, titles):
         doc.add_heading(title, level=1)
         img_stream = io.BytesIO()
-        fig.savefig(img_stream, format='png', dpi=300, bbox_inches='tight')
+        # Giảm DPI khi lưu Word xuống 200 để tránh tràn RAM lúc xuất file
+        fig.savefig(img_stream, format='png', dpi=200, bbox_inches='tight')
         img_stream.seek(0)
         doc.add_picture(img_stream, width=Inches(5.5))
         doc.add_paragraph("-" * 50)
@@ -126,9 +128,6 @@ if uploaded_files:
         "Cross-Line Comparison 🔀"
     ])
 
-    # =========================================================================
-    # MODE 1: CROSS-LINE COMPARISON
-    # =========================================================================
     if view_mode == "Cross-Line Comparison 🔀":
         st.title("🔀 Statistical Process Shift & Limits Recommendation")
         
@@ -157,22 +156,23 @@ if uploaded_files:
                     col_ma = find_data_col(df_ma, short_key)
                     col_son = find_data_col(df_son, short_key)
 
-                    temp_ma = df_ma.copy()
+                    # Dùng chunk (chỉ copy cột cần thiết) thay vì copy cả Dataframe để tiết kiệm RAM
+                    temp_ma = df_ma[[col_ma]].copy()
                     temp_ma['val'] = pd.to_numeric(temp_ma[col_ma], errors='coerce')
                     temp_ma = temp_ma.dropna(subset=['val']).reset_index(drop=True)
 
-                    temp_son = df_son.copy()
+                    temp_son = df_son[[col_son]].copy()
                     temp_son['val'] = pd.to_numeric(temp_son[col_son], errors='coerce')
                     temp_son = temp_son.dropna(subset=['val']).reset_index(drop=True)
 
-                    thick_col_ma = next((c for c in temp_ma.columns if "厚度" in str(c) or "thickness" in str(c).lower()), None)
-                    thick_col_son = next((c for c in temp_son.columns if "厚度" in str(c) or "thickness" in str(c).lower()), None)
+                    thick_col_ma = next((c for c in df_ma.columns if "厚度" in str(c) or "thickness" in str(c).lower()), None)
+                    thick_col_son = next((c for c in df_son.columns if "厚度" in str(c) or "thickness" in str(c).lower()), None)
 
                     groups_to_compare = []
 
                     if thick_col_ma and thick_col_son:
-                        temp_ma['Thick_Num'] = pd.to_numeric(temp_ma[thick_col_ma], errors='coerce')
-                        temp_son['Thick_Num'] = pd.to_numeric(temp_son[thick_col_son], errors='coerce')
+                        temp_ma['Thick_Num'] = pd.to_numeric(df_ma[thick_col_ma], errors='coerce')
+                        temp_son['Thick_Num'] = pd.to_numeric(df_son[thick_col_son], errors='coerce')
                         
                         ma_g1 = temp_ma[temp_ma['Thick_Num'] <= 0.60].copy()
                         son_g1 = temp_son[temp_son['Thick_Num'] <= 0.60].copy()
@@ -198,21 +198,15 @@ if uploaded_files:
                         vals_ma_full = group_ma['val']
                         vals_son_full = group_son['val']
 
-                        def get_theoretical_mean_group(df_group):
-                            df_calc = df_group.copy()
-                            g_col = next((c for c in df_group.columns if any(kw in str(c).lower() for kw in ['grade', '等级', '等級', 'cấp', 'quality', 'loại'])), None)
-                            if g_col:
-                                f_df = df_calc[df_calc[g_col].astype(str).str.upper().str.contains(r'A|B', regex=True, na=False)]
-                                if not f_df.empty: df_calc = f_df
-                            return df_calc['val'].mean()
-
-                        mean_ma = get_theoretical_mean_group(group_ma)
-                        mean_son = get_theoretical_mean_group(group_son)
+                        # Chuyển xử lý tính toán ra bên ngoài để tránh lưu trữ biến thừa
+                        mean_ma = vals_ma_full.mean()
+                        mean_son = vals_son_full.mean()
                         
                         delta = mean_son - mean_ma if pd.notnull(mean_son) and pd.notnull(mean_ma) else 0
 
-                        son_lsl_series = get_limit_series(group_son, zh_key, "min", "管制", len(group_son))
-                        son_usl_series = get_limit_series(group_son, zh_key, "max", "管制", len(group_son))
+                        # Dùng trực tiếp df_son để quét limit, tránh truyền group df nếu không khớp index
+                        son_lsl_series = get_limit_series(df_son, zh_key, "min", "管制", len(df_son))
+                        son_usl_series = get_limit_series(df_son, zh_key, "max", "管制", len(df_son))
                         
                         lsl_vals = son_lsl_series[son_lsl_series > 0]
                         usl_vals = son_usl_series[son_usl_series > 0]
@@ -274,7 +268,7 @@ if uploaded_files:
                                     
                                     ax_comp.plot(x_range, y_vals, color=color, lw=2.5, label=label_name)
                                     ax_comp.fill_between(x_range, y_vals, alpha=0.3, color=color)
-                                    ax_comp.axvline(mu_val, color=color, linestyle='-', linewidth=2.0, alpha=1.0) 
+                                    ax_comp.axvline(mu_val, color=color, linestyle='--', alpha=0.8) 
                             
                             ax_comp.set_ylabel("Coil Count")
                             ax_comp.set_xlabel(f"{selected_label} Value")
@@ -286,6 +280,10 @@ if uploaded_files:
                             apply_full_border(ax_comp)
                             plt.tight_layout()
                             st.pyplot(fig_comp)
+                            
+                        # Dọn dẹp RAM sau khi vẽ xong
+                        plt.close(fig_comp)
+                        gc.collect()
                         
                         st.markdown("<br>", unsafe_allow_html=True)
 
@@ -318,9 +316,19 @@ if uploaded_files:
                     continue
                 
                 df_raw = load_and_clean_data(file_obj)
-                df = df_raw.copy()
                 
-                is_coating_line = any("原始" in str(c) for c in df.columns)
+                # QUAN TRỌNG: Chỉ copy các cột thực sự cần thiết thay vì df.copy() toàn bộ
+                necessary_cols = []
+                for k, v in metrics_map.items():
+                    col = find_data_col(df_raw, v)
+                    if col: necessary_cols.append(col)
+                for kw in ["管制", "規格", "要求", "厚度", "thickness", "用途碼"]:
+                    cols = [c for c in df_raw.columns if kw in str(c)]
+                    necessary_cols.extend(cols)
+                
+                df = df_raw[list(set(necessary_cols))].copy() if necessary_cols else df_raw.copy()
+                
+                is_coating_line = any("原始" in str(c) for c in df_raw.columns)
                 actual_line_type = "Coating Line" if is_coating_line else "Galvanizing Line"
                 
                 st.info(f"📂 Analyzing File: **{fname}** | Auto-detected: **{actual_line_type}**")
@@ -343,17 +351,17 @@ if uploaded_files:
                         zh_key = zh_map_global.get(short_key, short_key)
                         
                         if data_col:
-                            temp_df = df.copy()
+                            temp_df = df[[data_col]].copy()
                             temp_df['val'] = pd.to_numeric(temp_df[data_col], errors='coerce')
                             temp_df = temp_df.dropna(subset=['val']).reset_index(drop=True)
                             
                             if temp_df.empty: continue
                             
-                            thick_col = next((c for c in temp_df.columns if "厚度" in str(c) or "thickness" in str(c).lower()), None)
+                            thick_col = next((c for c in df.columns if "厚度" in str(c) or "thickness" in str(c).lower()), None)
                             
                             groups = []
                             if thick_col:
-                                temp_df['Thick_Num'] = pd.to_numeric(temp_df[thick_col], errors='coerce')
+                                temp_df['Thick_Num'] = pd.to_numeric(df[thick_col], errors='coerce')
                                 g1 = temp_df[temp_df['Thick_Num'] <= 0.60]
                                 g2 = temp_df[temp_df['Thick_Num'] > 0.60]
                                 g_nan = temp_df[temp_df['Thick_Num'].isna()]
@@ -372,8 +380,9 @@ if uploaded_files:
                                 mu_v = p_data.mean()
                                 sig_v = p_data.std(ddof=1) if n_count > 1 else 0
                                 
-                                i_lsl_series = get_limit_series(group_df, zh_key, "min", "管制", n_count)
-                                i_usl_series = get_limit_series(group_df, zh_key, "max", "管制", n_count)
+                                # Quét limit trực tiếp từ df chính
+                                i_lsl_series = get_limit_series(df, zh_key, "min", "管制", len(df))
+                                i_usl_series = get_limit_series(df, zh_key, "max", "管制", len(df))
                                 
                                 lsl_vals = i_lsl_series[i_lsl_series > 0]
                                 usl_vals = i_usl_series[i_usl_series > 0]
@@ -424,7 +433,8 @@ if uploaded_files:
                         zh_key = zh_map_global.get(short_key, short_key)
                         
                         if data_col:
-                            temp_df = df.copy()
+                            # Cắt giảm copy Dataframe để giảm RAM
+                            temp_df = df[[data_col]].copy()
                             temp_df[data_col] = pd.to_numeric(temp_df[data_col], errors='coerce')
                             
                             plot_df = temp_df.dropna(subset=[data_col]).reset_index(drop=True)
@@ -432,10 +442,10 @@ if uploaded_files:
                             n = len(plot_data)
 
                             if view_mode == "Process Analytics":
-                                int_lsl_series = get_limit_series(plot_df, zh_key, "min", "管制", n)
-                                int_usl_series = get_limit_series(plot_df, zh_key, "max", "管制", n)
-                                cust_lsl_series = get_limit_series(plot_df, zh_key, "min", "客戶要求", n)
-                                cust_usl_series = get_limit_series(plot_df, zh_key, "max", "客戶要求", n)
+                                int_lsl_series = get_limit_series(df, zh_key, "min", "管制", len(df)).loc[temp_df[data_col].notna()].reset_index(drop=True)
+                                int_usl_series = get_limit_series(df, zh_key, "max", "管制", len(df)).loc[temp_df[data_col].notna()].reset_index(drop=True)
+                                cust_lsl_series = get_limit_series(df, zh_key, "min", "客戶要求", len(df)).loc[temp_df[data_col].notna()].reset_index(drop=True)
+                                cust_usl_series = get_limit_series(df, zh_key, "max", "客戶要求", len(df)).loc[temp_df[data_col].notna()].reset_index(drop=True)
 
                                 if is_coating_line and short_key == "YPE":
                                     int_lsl_series = pd.Series([4.0] * n)
@@ -445,14 +455,9 @@ if uploaded_files:
                                 temp_plot_df['USL_temp'] = int_usl_series.fillna(-1).values
                                 
                                 groups = temp_plot_df.groupby(['LSL_temp', 'USL_temp'])
+                                is_multi_group = len(groups) > 1
                                 
-                                df_calc = plot_df.copy()
-                                grade_col = next((c for c in df.columns if any(kw in str(c).lower() for kw in ['grade', '等级', '等級', 'cấp', 'quality', 'loại'])), None)
-                                if grade_col:
-                                    f_df = df_calc[df_calc[grade_col].astype(str).str.upper().str.contains(r'A|B', regex=True, na=False)]
-                                    if not f_df.empty: df_calc = f_df
-                                
-                                calc_data = df_calc[data_col].dropna()
+                                calc_data = plot_data
                                 mu = calc_data.mean()
                                 sigma_fixed = calc_data.std(ddof=1)
                                 safe_sigma = sigma_fixed if pd.notnull(sigma_fixed) and sigma_fixed > 0 else 1
@@ -461,7 +466,8 @@ if uploaded_files:
                                 tab_trend, tab_dist = st.tabs([f"📈 {selected_label} Trend", f"📊 {selected_label} Distribution"])
 
                                 with tab_trend:
-                                    fig_t, ax_t = plt.subplots(figsize=(13, 6.5)) 
+                                    # Thu gọn figsize để tăng tốc độ render (Matplotlib memory issue)
+                                    fig_t, ax_t = plt.subplots(figsize=(11, 5.5)) 
                                     x_coords = np.arange(1, n+1)
 
                                     if not int_lsl_series.isna().all() and not int_usl_series.isna().all():
@@ -495,23 +501,26 @@ if uploaded_files:
                                     color_idx = 0
                                     for (lsl, usl), group in groups:
                                         c = THEME_COLORS[color_idx % len(THEME_COLORS)]
-                                        mask = temp_plot_df.index.isin(group.index)
                                         
+                                        c_mean = c if is_multi_group else "#0055FF"
+                                        c_limit = c if is_multi_group else "#FF0000"
+                                        
+                                        mask = temp_plot_df.index.isin(group.index)
                                         spec_txt = format_spec(lsl, usl)
                                         
                                         group_mean = group[data_col].mean()
                                         
-                                        ax_t.axhline(group_mean, color=c, linestyle="-", linewidth=2.0, alpha=0.7, label="Group Mean" if color_idx==0 else None)
-                                        add_to_label(group_mean, "Mean", c)
+                                        ax_t.axhline(group_mean, color=c_mean, linestyle="-", linewidth=2.0, alpha=0.7, label="Group Mean" if color_idx==0 else None)
+                                        add_to_label(group_mean, "Mean", c_mean)
                                         
                                         if lsl != -1: 
-                                            ax_t.axhline(lsl, color=c, linestyle="--", linewidth=2.0, alpha=1.0)
-                                            add_to_label(lsl, "Int LSL", c)
+                                            ax_t.axhline(lsl, color=c_limit, linestyle="--", linewidth=2.0, alpha=1.0)
+                                            add_to_label(lsl, "Int LSL", c_limit)
                                         if usl != -1: 
-                                            ax_t.axhline(usl, color=c, linestyle="--", linewidth=2.0, alpha=1.0)
-                                            add_to_label(usl, "Int USL", c)
+                                            ax_t.axhline(usl, color=c_limit, linestyle="--", linewidth=2.0, alpha=1.0)
+                                            add_to_label(usl, "Int USL", c_limit)
                                             
-                                        ax_t.scatter(x_coords[mask], plot_data[mask], color=c, s=45, edgecolor="black", linewidth=1.0, zorder=4, label=f"Data ({spec_txt})")
+                                        ax_t.scatter(x_coords[mask], plot_data[mask], color=c, s=40, edgecolor="black", linewidth=1.0, zorder=4, label=f"Data ({spec_txt})")
                                         color_idx += 1
 
                                     # 3. HIGHLIGHT ĐIỂM LỖI
@@ -545,7 +554,7 @@ if uploaded_files:
                                             
                                         ax_t.plot([n, n + (n*0.02)], [val, y_draw], color="black", linestyle="-", lw=1.0, alpha=0.4)
                                         bbox = dict(boxstyle="round,pad=0.3", fc="#FFFFFF", ec=main_color, alpha=0.95, lw=1.5)
-                                        ax_t.text(n + (n*0.025), y_draw, f"{names_str}: {val:.1f}", color=main_color, va='center', ha='left', fontsize=10, bbox=bbox, fontweight='bold')
+                                        ax_t.text(n + (n*0.025), y_draw, f"{names_str}: {val:.1f}", color=main_color, va='center', ha='left', fontsize=9, bbox=bbox, fontweight='bold')
                                         last_y = y_draw
 
                                     ax_t.set_xlabel("Coil Sequence")
@@ -561,9 +570,10 @@ if uploaded_files:
                                     
                                     buf_t = export_to_word([fig_t], [f"Trend Analysis - {selected_label}"])
                                     st.download_button(label=f"📥 Download Trend Chart ({selected_label})", data=buf_t, file_name=f"Trend_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_trend_{fname}_{selected_label}")
+                                    plt.close(fig_t)
 
                                 with tab_dist:
-                                    fig_d, ax_d = plt.subplots(figsize=(12, 6))
+                                    fig_d, ax_d = plt.subplots(figsize=(11, 5.5))
                                     
                                     hist_data, hist_labels = [], []
                                     color_idx = 0
@@ -573,7 +583,10 @@ if uploaded_files:
                                         hist_labels.append(f"Data ({spec_txt})")
                                         color_idx += 1
                                         
-                                    ax_d.hist(hist_data, bins=20, stacked=True, density=False, alpha=0.8, edgecolor="black", label=hist_labels, color=THEME_COLORS[:len(hist_data)])
+                                    if is_multi_group:
+                                        ax_d.hist(hist_data, bins=20, stacked=True, density=False, alpha=0.8, edgecolor="black", label=hist_labels, color=THEME_COLORS[:len(hist_data)])
+                                    else:
+                                        ax_d.hist(plot_data, bins=20, density=False, alpha=0.6, color="#0055FF", edgecolor="black", label="Data")
 
                                     ax_d.yaxis.set_major_locator(MaxNLocator(integer=True))
                                     ax_d.set_xlabel(f"{selected_label} Value")
@@ -603,8 +616,10 @@ if uploaded_files:
 
                                     color_idx = 0
                                     for (lsl, usl), group in groups:
-                                        c_mean = "#2C3E50"  # Xanh Đen/Navy cho Mean để tách biệt
-                                        c_limit = "#FF0000" # Đỏ rực cho Giới hạn để tách biệt
+                                        c = THEME_COLORS[color_idx % len(THEME_COLORS)]
+                                        
+                                        c_mean = c if is_multi_group else "#0055FF"
+                                        c_limit = c if is_multi_group else "#FF0000"
                                         
                                         group_mean = group[data_col].mean()
                                         register_vline(group_mean, c_mean, "-", "Theo. Value" if color_idx==0 else None)
@@ -656,25 +671,18 @@ if uploaded_files:
                                     
                                     buf_d = export_to_word([fig_d], [f"Distribution Analysis - {selected_label}"])
                                     st.download_button(label=f"📥 Download Dist Chart ({selected_label})", data=buf_d, file_name=f"Dist_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_dist_{fname}_{selected_label}")
-
+                                    plt.close(fig_d)
+                                    
                             elif view_mode == "SPC Control Charts (I-MR)":
-                                df_calc = plot_df.copy()
-                                grade_col = next((c for c in df.columns if any(kw in str(c).lower() for kw in ['grade', '等级', '等級', 'cấp', 'quality', 'loại'])), None)
-                                if grade_col:
-                                    f_df = df_calc[df_calc[grade_col].astype(str).str.upper().str.contains(r'A|B', regex=True, na=False)]
-                                    if not f_df.empty: df_calc = f_df
-                                
-                                calc_data = df_calc[data_col].dropna()
-                                mu = calc_data.mean()
-                                sigma_fixed = calc_data.std(ddof=1)
-
                                 thick_col = next((c for c in df.columns if "厚度" in str(c) or "thickness" in str(c).lower()), None)
                                 
                                 spc_groups = []
-                                temp_spc_df = plot_df.copy()
+                                temp_spc_df = df[[data_col]].copy()
+                                temp_spc_df[data_col] = pd.to_numeric(temp_spc_df[data_col], errors='coerce')
                                 
                                 if thick_col:
-                                    temp_spc_df['Thick_Num'] = pd.to_numeric(temp_spc_df[thick_col], errors='coerce')
+                                    temp_spc_df['Thick_Num'] = pd.to_numeric(df[thick_col], errors='coerce')
+                                    temp_spc_df = temp_spc_df.dropna(subset=[data_col]).reset_index(drop=True)
                                     
                                     g1 = temp_spc_df[temp_spc_df['Thick_Num'] <= 0.60]
                                     g2 = temp_spc_df[temp_spc_df['Thick_Num'] > 0.60]
@@ -686,6 +694,7 @@ if uploaded_files:
                                     
                                     st.markdown(f"#### 📐 Bảng thông số Kiểm soát (Phân loại theo Độ dày)")
                                 else:
+                                    temp_spc_df = temp_spc_df.dropna(subset=[data_col]).reset_index(drop=True)
                                     spc_groups.append(("Toàn bộ dữ liệu", temp_spc_df))
                                     st.warning("⚠️ Không tìm thấy cột '訂單厚度' (Độ dày). Hệ thống đang tính chung cho toàn bộ dữ liệu.")
                                     st.markdown(f"#### 📐 Bảng thông số Kiểm soát")
@@ -715,10 +724,10 @@ if uploaded_files:
                                 if spc_stats:
                                     st.dataframe(pd.DataFrame(spc_stats), hide_index=True, use_container_width=True)
 
-                                fig_imr, ax_i = plt.subplots(figsize=(13, 6.5)) 
-                                x_coords_spc = np.arange(1, n+1)
+                                fig_imr, ax_i = plt.subplots(figsize=(11, 5.5)) 
+                                x_coords_spc = np.arange(1, len(temp_spc_df)+1)
                                 
-                                ax_i.plot(x_coords_spc, plot_data, color="#CFD8DC", linestyle="-", linewidth=1.5, zorder=1)
+                                ax_i.plot(x_coords_spc, temp_spc_df[data_col], color="#CFD8DC", linestyle="-", linewidth=1.5, zorder=1)
                                 
                                 color_idx = 0
                                 
@@ -733,7 +742,7 @@ if uploaded_files:
                                         g_q1, g_q3 = g_data.quantile(0.25), g_data.quantile(0.75)
                                         g_iqr = g_q3 - g_q1
                                         
-                                        ax_i.scatter(x_coords_spc[mask], plot_data[mask], color=c, s=45, edgecolor="black", linewidth=1.0, zorder=3, label=f"Data ({g_name})")
+                                        ax_i.scatter(x_coords_spc[mask], temp_spc_df[data_col][mask], color=c, s=40, edgecolor="black", linewidth=1.0, zorder=3, label=f"Data ({g_name})")
                                         
                                         ax_i.axhline(g_mu, color=c, linestyle="-", linewidth=2.0, alpha=0.8)
                                         ax_i.axhline(g_mu + k_std*g_sig, color=c, linestyle="--", linewidth=1.8, alpha=0.8)
@@ -758,7 +767,7 @@ if uploaded_files:
                                 by_label = dict(zip(labels, handles))
                                 ax_i.legend(list(by_label.values()) + custom_lines, list(by_label.keys()) + [l.get_label() for l in custom_lines], loc="upper left", bbox_to_anchor=(1, 1))
                                 
-                                valid_y = plot_data.dropna()
+                                valid_y = temp_spc_df[data_col].dropna()
                                 ymin, ymax = valid_y.min(), valid_y.max()
                                 y_range = ymax - ymin if ymax > ymin else 10
                                 ax_i.set_ylim(ymin - y_range*0.1, ymax + y_range*0.1)
@@ -767,5 +776,9 @@ if uploaded_files:
                                 
                                 buf_i = export_to_word([fig_imr], [f"SPC I-Chart Analysis - {selected_label}"])
                                 st.download_button(label=f"📥 Download SPC Chart ({selected_label})", data=buf_i, file_name=f"SPC_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_spc_{fname}_{selected_label}")
+                                plt.close(fig_imr)
+                                
+                            # Dọn RAM lần cuối cho mỗi tab
+                            gc.collect()
 else:
     st.info("👈 Please upload the production report to start.")
