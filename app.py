@@ -274,7 +274,7 @@ if uploaded_files:
                                     
                                     ax_comp.plot(x_range, y_vals, color=color, lw=2.5, label=label_name)
                                     ax_comp.fill_between(x_range, y_vals, alpha=0.3, color=color)
-                                    ax_comp.axvline(mu_val, color=color, linestyle='--', alpha=0.8) 
+                                    ax_comp.axvline(mu_val, color=color, linestyle='-', linewidth=2.0, alpha=1.0) 
                             
                             ax_comp.set_ylabel("Coil Count")
                             ax_comp.set_xlabel(f"{selected_label} Value")
@@ -343,41 +343,78 @@ if uploaded_files:
                         zh_key = zh_map_global.get(short_key, short_key)
                         
                         if data_col:
-                            p_data = pd.to_numeric(df[data_col], errors='coerce').dropna()
-                            if len(p_data) == 0: continue
-                            mu_v = p_data.mean()
-                            sig_v = p_data.std(ddof=1)
-                            i_lsl = get_limit(df, zh_key, "min", "管制")
-                            i_usl = get_limit(df, zh_key, "max", "管制")
+                            temp_df = df.copy()
+                            temp_df['val'] = pd.to_numeric(temp_df[data_col], errors='coerce')
+                            temp_df = temp_df.dropna(subset=['val']).reset_index(drop=True)
                             
-                            if is_coating_line and short_key == "YPE":
-                                i_lsl = 4.0
+                            if temp_df.empty: continue
                             
-                            cp, ca, cpk, formula, status = "-", "-", "-", "-", "N/A"
-                            cpk_val = None
-                            if sig_v > 0:
-                                if i_usl is not None and i_lsl is not None:
-                                    cp_v = (i_usl - i_lsl) / (6 * sig_v)
-                                    cnt, half = (i_usl + i_lsl) / 2, (i_usl - i_lsl) / 2
-                                    ca_v = (mu_v - cnt) / half
-                                    cpk_val = cp_v * (1 - abs(ca_v))
-                                    cp, ca, cpk, formula = format_num(cp_v), f"{ca_v*100:.1f}%", format_num(cpk_val), "Cp*(1-|Ca|)"
-                                elif i_usl is not None:
-                                    cpk_val = (i_usl - mu_v) / (3 * sig_v); cpk, formula = format_num(cpk_val), "Cpu"
-                                elif i_lsl is not None:
-                                    cpk_val = (mu_v - i_lsl) / (3 * sig_v); cpk, formula = format_num(cpk_val), "Cpl"
-                                    
-                                if cpk_val is not None:
-                                    if cpk_val < 1.0: status = "🔴 Action Required"
-                                    elif 1.0 <= cpk_val < 1.33: status = "🟡 Acceptable"
-                                    elif 1.33 <= cpk_val <= 2.0: status = "🟢 Excellent"
-                                    else: status = "🔵 Over-engineered (>2.0)"
+                            thick_col = next((c for c in temp_df.columns if "厚度" in str(c) or "thickness" in str(c).lower()), None)
                             
-                            summary_data.append({"Parameter": selected_label, "N": len(p_data), "Mean": format_num(mu_v), "StdDev (σ)": format_num(sig_v),
-                                               "Int LSL": format_num(i_lsl), "Int USL": format_num(i_usl), "Cp": cp, "Ca": ca, "Cpk": cpk, 
-                                               "Cpk Formula": formula, "Status": status})
+                            groups = []
+                            if thick_col:
+                                temp_df['Thick_Num'] = pd.to_numeric(temp_df[thick_col], errors='coerce')
+                                g1 = temp_df[temp_df['Thick_Num'] <= 0.60]
+                                g2 = temp_df[temp_df['Thick_Num'] > 0.60]
+                                g_nan = temp_df[temp_df['Thick_Num'].isna()]
+                                
+                                if not g1.empty: groups.append(("<= 0.60", g1))
+                                if not g2.empty: groups.append(("> 0.60", g2))
+                                if not g_nan.empty: groups.append(("Unknown", g_nan))
+                            else:
+                                groups.append(("All", temp_df))
+
+                            for g_name, group_df in groups:
+                                p_data = group_df['val']
+                                n_count = len(p_data)
+                                if n_count == 0: continue
+                                
+                                mu_v = p_data.mean()
+                                sig_v = p_data.std(ddof=1) if n_count > 1 else 0
+                                
+                                i_lsl_series = get_limit_series(group_df, zh_key, "min", "管制", n_count)
+                                i_usl_series = get_limit_series(group_df, zh_key, "max", "管制", n_count)
+                                
+                                lsl_vals = i_lsl_series[i_lsl_series > 0]
+                                usl_vals = i_usl_series[i_usl_series > 0]
+                                
+                                i_lsl = lsl_vals.mode()[0] if not lsl_vals.empty else None
+                                i_usl = usl_vals.mode()[0] if not usl_vals.empty else None
+                                
+                                if is_coating_line and short_key == "YPE":
+                                    i_lsl = 4.0
+                                
+                                cp, ca, cpk, formula, status = "-", "-", "-", "-", "N/A"
+                                cpk_val = None
+                                if pd.notnull(sig_v) and sig_v > 0:
+                                    if i_usl is not None and i_lsl is not None:
+                                        cp_v = (i_usl - i_lsl) / (6 * sig_v)
+                                        cnt, half = (i_usl + i_lsl) / 2, (i_usl - i_lsl) / 2
+                                        ca_v = (mu_v - cnt) / half
+                                        cpk_val = cp_v * (1 - abs(ca_v))
+                                        cp, ca, cpk, formula = format_num(cp_v), f"{ca_v*100:.1f}%", format_num(cpk_val), "Cp*(1-|Ca|)"
+                                    elif i_usl is not None:
+                                        cpk_val = (i_usl - mu_v) / (3 * sig_v); cpk, formula = format_num(cpk_val), "Cpu"
+                                    elif i_lsl is not None:
+                                        cpk_val = (mu_v - i_lsl) / (3 * sig_v); cpk, formula = format_num(cpk_val), "Cpl"
+                                        
+                                    if cpk_val is not None:
+                                        if cpk_val < 1.0: status = "🔴 Action Required"
+                                        elif 1.0 <= cpk_val < 1.33: status = "🟡 Acceptable"
+                                        elif 1.33 <= cpk_val <= 2.0: status = "🟢 Excellent"
+                                        else: status = "🔵 Over-engineered (>2.0)"
+                                
+                                summary_data.append({
+                                    "Parameter": selected_label, 
+                                    "Thickness": g_name,
+                                    "N": n_count, "Mean": format_num(mu_v), "StdDev (σ)": format_num(sig_v),
+                                    "Int LSL": format_num(i_lsl), "Int USL": format_num(i_usl), 
+                                    "Cp": cp, "Ca": ca, "Cpk": cpk, 
+                                    "Cpk Formula": formula, "Status": status
+                                })
                     
-                    st.dataframe(pd.DataFrame(summary_data), hide_index=True, use_container_width=True)
+                    if summary_data:
+                        st.dataframe(pd.DataFrame(summary_data), hide_index=True, use_container_width=True)
 
                 else:
                     for selected_label in available:
@@ -408,7 +445,6 @@ if uploaded_files:
                                 temp_plot_df['USL_temp'] = int_usl_series.fillna(-1).values
                                 
                                 groups = temp_plot_df.groupby(['LSL_temp', 'USL_temp'])
-                                is_multi_group = len(groups) > 1
                                 
                                 df_calc = plot_df.copy()
                                 grade_col = next((c for c in df.columns if any(kw in str(c).lower() for kw in ['grade', '等级', '等級', 'cấp', 'quality', 'loại'])), None)
@@ -459,29 +495,22 @@ if uploaded_files:
                                     color_idx = 0
                                     for (lsl, usl), group in groups:
                                         c = THEME_COLORS[color_idx % len(THEME_COLORS)]
-                                        
-                                        # Nếu chỉ có 1 nhóm, áp dụng chuẩn màu hiển thị Minitab
-                                        c_mean = c if is_multi_group else "#0055FF"
-                                        c_limit = c if is_multi_group else "#FF0000"
-                                        
                                         mask = temp_plot_df.index.isin(group.index)
+                                        
                                         spec_txt = format_spec(lsl, usl)
                                         
                                         group_mean = group[data_col].mean()
                                         
-                                        # Mean Line
-                                        ax_t.axhline(group_mean, color=c_mean, linestyle="-", linewidth=2.0, alpha=0.7, label="Group Mean" if color_idx==0 else None)
-                                        add_to_label(group_mean, "Mean", c_mean)
+                                        ax_t.axhline(group_mean, color=c, linestyle="-", linewidth=2.0, alpha=0.7, label="Group Mean" if color_idx==0 else None)
+                                        add_to_label(group_mean, "Mean", c)
                                         
-                                        # Int Limits
                                         if lsl != -1: 
-                                            ax_t.axhline(lsl, color=c_limit, linestyle="--", linewidth=2.0, alpha=1.0)
-                                            add_to_label(lsl, "Int LSL", c_limit)
+                                            ax_t.axhline(lsl, color=c, linestyle="--", linewidth=2.0, alpha=1.0)
+                                            add_to_label(lsl, "Int LSL", c)
                                         if usl != -1: 
-                                            ax_t.axhline(usl, color=c_limit, linestyle="--", linewidth=2.0, alpha=1.0)
-                                            add_to_label(usl, "Int USL", c_limit)
+                                            ax_t.axhline(usl, color=c, linestyle="--", linewidth=2.0, alpha=1.0)
+                                            add_to_label(usl, "Int USL", c)
                                             
-                                        # Data Points
                                         ax_t.scatter(x_coords[mask], plot_data[mask], color=c, s=45, edgecolor="black", linewidth=1.0, zorder=4, label=f"Data ({spec_txt})")
                                         color_idx += 1
 
@@ -544,11 +573,7 @@ if uploaded_files:
                                         hist_labels.append(f"Data ({spec_txt})")
                                         color_idx += 1
                                         
-                                    if is_multi_group:
-                                        ax_d.hist(hist_data, bins=20, stacked=True, density=False, alpha=0.8, edgecolor="black", label=hist_labels, color=THEME_COLORS[:len(hist_data)])
-                                    else:
-                                        # Khi có 1 nhóm duy nhất: Dùng màu xanh nhạt (Light Blue) cho cột
-                                        ax_d.hist(plot_data, bins=20, density=False, alpha=0.6, color="#7FB3D5", edgecolor="black", label="Data")
+                                    ax_d.hist(hist_data, bins=20, stacked=True, density=False, alpha=0.8, edgecolor="black", label=hist_labels, color=THEME_COLORS[:len(hist_data)])
 
                                     ax_d.yaxis.set_major_locator(MaxNLocator(integer=True))
                                     ax_d.set_xlabel(f"{selected_label} Value")
@@ -578,10 +603,8 @@ if uploaded_files:
 
                                     color_idx = 0
                                     for (lsl, usl), group in groups:
-                                        c = THEME_COLORS[color_idx % len(THEME_COLORS)]
-                                        
-                                        c_mean = c if is_multi_group else "#0055FF"
-                                        c_limit = c if is_multi_group else "#FF0000"
+                                        c_mean = "#2C3E50"  # Xanh Đen/Navy cho Mean để tách biệt
+                                        c_limit = "#FF0000" # Đỏ rực cho Giới hạn để tách biệt
                                         
                                         group_mean = group[data_col].mean()
                                         register_vline(group_mean, c_mean, "-", "Theo. Value" if color_idx==0 else None)
