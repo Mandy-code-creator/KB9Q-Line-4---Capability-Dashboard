@@ -483,13 +483,13 @@ if uploaded_files:
                                     if not cust_lsl_series.isna().all():
                                         for c_val in cust_lsl_series.dropna().unique():
                                             if c_val > 0: 
-                                                ax_t.axhline(c_val, color="#555555", linestyle=":", linewidth=2.0, alpha=0.9)
-                                                add_to_label(c_val, "Cust LSL", "#555555")
+                                                ax_t.axhline(c_val, color="#00AA00", linestyle=":", linewidth=2.0, alpha=0.9)
+                                                add_to_label(c_val, "Cust LSL", "#00AA00")
                                     if not cust_usl_series.isna().all():
                                         for c_val in cust_usl_series.dropna().unique():
                                             if c_val > 0: 
-                                                ax_t.axhline(c_val, color="#555555", linestyle=":", linewidth=2.0, alpha=0.9)
-                                                add_to_label(c_val, "Cust USL", "#555555")
+                                                ax_t.axhline(c_val, color="#00AA00", linestyle=":", linewidth=2.0, alpha=0.9)
+                                                add_to_label(c_val, "Cust USL", "#00AA00")
 
                                     # 2. VẼ ĐƯỜNG MEAN & GIỚI HẠN NỘI BỘ 
                                     color_idx = 0
@@ -612,8 +612,8 @@ if uploaded_files:
                                         if usl != -1: register_vline(usl, c_limit, "--", "Int USL" if color_idx==0 else None)
                                         color_idx += 1
 
-                                    register_multiple(cust_lsl_series, "#555555", "-", "Cust LSL")
-                                    register_multiple(cust_usl_series, "#555555", "-", "Cust USL")
+                                    register_multiple(cust_lsl_series, "#00AA00", "-", "Cust LSL")
+                                    register_multiple(cust_usl_series, "#00AA00", "-", "Cust USL")
 
                                     lines_to_draw.sort(key=lambda x: x['val'])
                                     x_range = x_max_fit - x_min_fit
