@@ -51,7 +51,7 @@ def get_limit(df, keyword, limit_type, category):
     return None
 
 def get_limit_series(df, keyword, limit_type, category, length):
-    """Lấy mảng giới hạn chi tiết cho từng dòng để vẽ biểu đồ động"""
+    """Lấy mảng giới hạn chi tiết cho từng dòng để vẽ biểu đồ động. Loại bỏ giới hạn <= 0."""
     col = next((c for c in df.columns if keyword in c and limit_type in c.lower() and category in c), None)
     if col:
         # Chuyển đổi sang số. mask(s <= 0, np.nan) sẽ biến các số 0 thành NaN để KHÔNG VẼ
@@ -284,7 +284,6 @@ if uploaded_files:
                             i_lsl = get_limit(df, zh_key, "min", "管制")
                             i_usl = get_limit(df, zh_key, "max", "管制")
                             
-                            # Ép giới hạn LSL = 4.0 cho YPE của chuyền Sơn
                             if is_coating_line and short_key == "YPE":
                                 i_lsl = 4.0
                             
@@ -321,7 +320,6 @@ if uploaded_files:
                         data_col = find_data_col(df, short_key) 
                         zh_key = zh_map_global.get(short_key, short_key)
                         
-                        # Giá trị giới hạn dạng hằng số (Dùng cho biểu đồ phân phối)
                         int_lsl = get_limit(df, zh_key, "min", "管制")
                         int_usl = get_limit(df, zh_key, "max", "管制")
                         cust_lsl = get_limit(df, zh_key, "min", "客戶要求")
@@ -367,15 +365,15 @@ if uploaded_files:
                                     x_coords = np.arange(1, n+1)
                                     ax_t.plot(x_coords, plot_data, marker="o", markersize=6, color="#1f77b4", label="Actual Value", zorder=1)
                                     
-                                    # Vẽ giới hạn bằng bậc thang (step) thay vì đường ngang (axhline)
-                                    if not int_lsl_series.isnull().all():
-                                        ax_t.step(x_coords, int_lsl_series, color="red", ls="--", lw=2, label="Int LSL", where='mid')
-                                    if not int_usl_series.isnull().all():
-                                        ax_t.step(x_coords, int_usl_series, color="red", ls="--", lw=2, label="Int USL", where='mid')
-                                    if not cust_lsl_series.isnull().all():
-                                        ax_t.step(x_coords, cust_lsl_series, color="green", ls="-", lw=2, label="Cust LSL", where='mid')
-                                    if not cust_usl_series.isnull().all():
-                                        ax_t.step(x_coords, cust_usl_series, color="green", ls="-", lw=2, label="Cust USL", where='mid')
+                                    # Vẽ giới hạn bằng bậc thang (where='post' để tránh gấp khúc)
+                                    if not int_lsl_series.isna().all():
+                                        ax_t.step(x_coords, int_lsl_series, color="red", ls="--", lw=2, label="Int LSL", where='post')
+                                    if not int_usl_series.isna().all():
+                                        ax_t.step(x_coords, int_usl_series, color="red", ls="--", lw=2, label="Int USL", where='post')
+                                    if not cust_lsl_series.isna().all():
+                                        ax_t.step(x_coords, cust_lsl_series, color="green", ls="-", lw=2, label="Cust LSL", where='post')
+                                    if not cust_usl_series.isna().all():
+                                        ax_t.step(x_coords, cust_usl_series, color="green", ls="-", lw=2, label="Cust USL", where='post')
 
                                     # Xác định điểm vượt giới hạn nội bộ (so sánh từng cuộn với giới hạn riêng của nó)
                                     lower_bound = int_lsl_series.fillna(-np.inf)
@@ -398,7 +396,7 @@ if uploaded_files:
                                     buf_t = export_to_word([fig_t], [f"Trend Analysis - {selected_label}"])
                                     st.download_button(label=f"📥 Download Trend Chart ({selected_label})", data=buf_t, file_name=f"Trend_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_trend_{fname}_{selected_label}")
 
-                               with tab_dist:
+                                with tab_dist:
                                     fig_d, ax_d = plt.subplots(figsize=(12, 6))
                                     ax_d.hist(plot_data, bins=20, density=False, alpha=0.4, color="#7FB3D5", edgecolor="black")
                                     ax_d.yaxis.set_major_locator(MaxNLocator(integer=True))
@@ -473,14 +471,14 @@ if uploaded_files:
                                 ax_i.axhline(mu, color="blue", ls="-", lw=2, label="Theoretical Mean")
                                 
                                 # Áp dụng giới hạn động cho SPC Chart
-                                if not int_lsl_series.isnull().all():
-                                    ax_i.step(x_coords_spc, int_lsl_series, color="red", ls="--", lw=2, label="Int LSL (Dyn)", where='mid')
-                                elif int_lsl is not None:
+                                if not int_lsl_series.isna().all():
+                                    ax_i.step(x_coords_spc, int_lsl_series, color="red", ls="--", lw=2, label="Int LSL (Dyn)", where='post')
+                                elif int_lsl is not None and int_lsl > 0:
                                     ax_i.axhline(int_lsl, color="red", ls="--", lw=2, label="Current Int LSL")
 
-                                if not int_usl_series.isnull().all():
-                                    ax_i.step(x_coords_spc, int_usl_series, color="red", ls="--", lw=2, label="Int USL (Dyn)", where='mid')
-                                elif int_usl is not None:
+                                if not int_usl_series.isna().all():
+                                    ax_i.step(x_coords_spc, int_usl_series, color="red", ls="--", lw=2, label="Int USL (Dyn)", where='post')
+                                elif int_usl is not None and int_usl > 0:
                                     ax_i.axhline(int_usl, color="red", ls="--", lw=2, label="Current Int USL")
                                 
                                 ax_i.axhline(mu + k_std*sigma_fixed, color="darkred", ls="-", label=f"Prop USL ({k_std}σ)")
