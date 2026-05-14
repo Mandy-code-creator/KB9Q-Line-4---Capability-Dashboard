@@ -8,6 +8,7 @@ from scipy.stats import norm, ttest_ind, sem, t
 import io
 from docx import Document
 from docx.shared import Inches
+import matplotlib.lines as mlines
 
 # ==========================================
 # 1. PAGE CONFIGURATION & FONTS
@@ -168,15 +169,12 @@ if uploaded_files:
                     specs_son = set(temp_son['Spec_Group'].unique())
                     common_specs = specs_ma.intersection(specs_son)
 
-                    # TẠO DANH SÁCH NHÓM CẦN PHÂN TÍCH (CÓ FALLBACK)
                     groups_to_compare = []
                     
                     if not common_specs:
                         st.info(f"ℹ️ Không có khung giới hạn chung cho {selected_label}. Chuyển sang chế độ phân tích tổng thể.")
-                        # Nếu rỗng -> Lấy toàn bộ dữ liệu làm 1 nhóm duy nhất
                         groups_to_compare.append(("Toàn bộ dữ liệu (Global)", temp_ma, temp_son, -1, -1))
                     else:
-                        # Nếu có -> Tách riêng từng nhóm Spec
                         for spec in sorted(list(common_specs)):
                             lsl, usl = spec
                             spec_str = f"Nhóm Spec: {format_num(lsl) if lsl != -1 else 'N/A'} - {format_num(usl) if usl != -1 else 'N/A'}"
@@ -184,7 +182,6 @@ if uploaded_files:
                             group_son = temp_son[temp_son['Spec_Group'] == spec]
                             groups_to_compare.append((spec_str, group_ma, group_son, lsl, usl))
 
-                    # CHẠY VÒNG LẶP PHÂN TÍCH CHO TỪNG NHÓM (HOẶC NHÓM GLOBAL)
                     for spec_str, group_ma, group_son, lsl, usl in groups_to_compare:
                         st.markdown(f"<h3 style='color: #D35400;'>📌 Phân tích: {spec_str}</h3>", unsafe_allow_html=True)
 
@@ -607,63 +604,95 @@ if uploaded_files:
                                     st.download_button(label=f"📥 Download Dist Chart ({selected_label})", data=buf_d, file_name=f"Dist_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_dist_{fname}_{selected_label}")
 
                             elif view_mode == "SPC Control Charts (I-MR)":
-                                q1, q3 = calc_data.quantile(0.25), calc_data.quantile(0.75)
-                                iqr_val = q3 - q1
-                                iqr_lsl = q1 - (k_iqr * iqr_val)
-                                iqr_usl = q3 + (k_iqr * iqr_val)
+                                st.markdown(f"#### 📐 Bảng thông số Kiểm soát (Tính riêng theo từng Spec)")
+                                
+                                spc_stats = []
+                                for (lsl, usl), group in groups:
+                                    g_data = group[data_col].dropna()
+                                    if len(g_data) > 1:
+                                        g_n = len(g_data)
+                                        g_mu = g_data.mean()
+                                        g_sig = g_data.std(ddof=1)
+                                        g_q1, g_q3 = g_data.quantile(0.25), g_data.quantile(0.75)
+                                        g_iqr = g_q3 - g_q1
+                                        
+                                        l_str = "N/A" if lsl == -1 else format_num(lsl)
+                                        u_str = "N/A" if usl == -1 else format_num(usl)
+                                        
+                                        spc_stats.append({
+                                            "Spec": f"{l_str} - {u_str}",
+                                            "N": g_n,
+                                            "Mean": format_num(g_mu),
+                                            "Sigma": format_num(g_sig),
+                                            "UCL (3σ)": format_num(g_mu + k_std*g_sig),
+                                            "LCL (3σ)": format_num(g_mu - k_std*g_sig),
+                                            "IQR": format_num(g_iqr),
+                                            "UCL (IQR)": format_num(g_q3 + k_iqr*g_iqr),
+                                            "LCL (IQR)": format_num(g_q1 - k_iqr*g_iqr)
+                                        })
+                                
+                                if spc_stats:
+                                    st.dataframe(pd.DataFrame(spc_stats), hide_index=True, use_container_width=True)
 
-                                col_r1, col_r2 = st.columns(2)
-                                with col_r1:
-                                    st.write("**Method: Standard Deviation**")
-                                    st.table(pd.DataFrame({
-                                        "Metric": ["N", "Theo. Mean", "Sigma", "Prop LSL", "Prop USL"],
-                                        "Value": [str(n), format_num(mu), format_num(sigma_fixed), format_num(mu - k_std*sigma_fixed), format_num(mu + k_std*sigma_fixed)]
-                                    }))
-                                with col_r2:
-                                    st.write("**Method: IQR (Strict Standard)**")
-                                    st.table(pd.DataFrame({
-                                        "Metric": ["N", "IQR", "k-factor", "Prop LSL (IQR)", "Prop USL (IQR)"],
-                                        "Value": [str(n), format_num(iqr_val), str(k_iqr), format_num(iqr_lsl), format_num(iqr_usl)]
-                                    }))
-
-                                fig_imr, ax_i = plt.subplots(figsize=(12, 6)) 
+                                fig_imr, ax_i = plt.subplots(figsize=(13, 6.5)) 
                                 x_coords_spc = np.arange(1, n+1)
                                 
+                                # Xương sống nối điểm mờ
                                 ax_i.plot(x_coords_spc, plot_data, color="#CFD8DC", linestyle="-", linewidth=1.5, zorder=1)
                                 
                                 color_idx = 0
                                 for (lsl, usl), group in groups:
                                     c = trend_colors[color_idx % len(trend_colors)]
                                     mask = temp_plot_df.index.isin(group.index)
+                                    g_data = group[data_col].dropna()
+                                    
                                     l_str = "N/A" if lsl == -1 else format_num(lsl)
                                     u_str = "N/A" if usl == -1 else format_num(usl)
                                     
-                                    group_mean = group[data_col].mean()
-                                    ax_i.plot(x_coords_spc, np.where(mask, group_mean, np.nan), color="blue", linestyle="-", linewidth=1.5, alpha=0.6, label="Group Mean")
-
-                                    ax_i.scatter(x_coords_spc[mask], plot_data[mask], color=c, s=50, edgecolor="black", zorder=3, label=f"Data & Lim ({l_str}-{u_str})")
-                                    
-                                    if lsl != -1: 
-                                        ax_i.plot(x_coords_spc, np.where(mask, lsl, np.nan), color=c, linestyle="--", linewidth=2.5)
-                                    if usl != -1: 
-                                        ax_i.plot(x_coords_spc, np.where(mask, usl, np.nan), color=c, linestyle="--", linewidth=2.5)
+                                    if len(g_data) > 1:
+                                        g_mu = g_data.mean()
+                                        g_sig = g_data.std(ddof=1)
+                                        g_q1, g_q3 = g_data.quantile(0.25), g_data.quantile(0.75)
+                                        g_iqr = g_q3 - g_q1
                                         
+                                        # Điểm dữ liệu
+                                        ax_i.scatter(x_coords_spc[mask], plot_data[mask], color=c, s=50, edgecolor="black", zorder=3, label=f"Data ({l_str}-{u_str})")
+                                        
+                                        # Group Mean (Nét liền)
+                                        ax_i.plot(x_coords_spc, np.where(mask, g_mu, np.nan), color=c, linestyle="-", linewidth=2, alpha=0.7)
+                                        
+                                        # Sigma Limits (Nét đứt)
+                                        ax_i.plot(x_coords_spc, np.where(mask, g_mu + k_std*g_sig, np.nan), color=c, linestyle="--", linewidth=1.5)
+                                        ax_i.plot(x_coords_spc, np.where(mask, g_mu - k_std*g_sig, np.nan), color=c, linestyle="--", linewidth=1.5)
+                                        
+                                        # IQR Limits (Nét chấm)
+                                        ax_i.plot(x_coords_spc, np.where(mask, g_q3 + k_iqr*g_iqr, np.nan), color=c, linestyle=":", linewidth=2, alpha=0.6)
+                                        ax_i.plot(x_coords_spc, np.where(mask, g_q1 - k_iqr*g_iqr, np.nan), color=c, linestyle=":", linewidth=2, alpha=0.6)
+
                                     color_idx += 1
-                                
-                                ax_i.axhline(mu + k_std*sigma_fixed, color="darkred", ls="-", label=f"Prop USL ({k_std}σ)")
-                                ax_i.axhline(mu - k_std*sigma_fixed, color="darkred", ls="-", label=f"Prop LSL ({k_std}σ)")
-                                ax_i.axhline(iqr_usl, color="brown", ls="--", label=f"Prop USL (IQR)")
-                                ax_i.axhline(iqr_lsl, color="brown", ls="--", label=f"Prop LSL (IQR)") 
                                 
                                 ax_i.set_xlabel("Coil Sequence")
                                 ax_i.set_ylabel(f"{selected_label} Value")
-                                ax_i.set_title(f"I-Chart: Control Limit Optimization ({selected_label})", pad=20)
+                                ax_i.set_title(f"I-Chart: Dynamic Control Limits by Spec ({selected_label})", pad=20)
+                                
+                                # Tạo Legend custom thông minh, gộp ý nghĩa các đường nét lại
+                                custom_lines = [
+                                    mlines.Line2D([], [], color='black', linestyle='-', lw=2, alpha=0.7, label='Group Mean'),
+                                    mlines.Line2D([], [], color='black', linestyle='--', lw=1.5, label=f'UCL/LCL ({k_std}σ)'),
+                                    mlines.Line2D([], [], color='black', linestyle=':', lw=2, alpha=0.6, label=f'UCL/LCL (IQR)')
+                                ]
                                 
                                 handles, labels = ax_i.get_legend_handles_labels()
                                 by_label = dict(zip(labels, handles))
-                                ax_i.legend(by_label.values(), by_label.keys(), loc="upper left", bbox_to_anchor=(1, 1))
+                                ax_i.legend(list(by_label.values()) + custom_lines, list(by_label.keys()) + [l.get_label() for l in custom_lines], loc="upper left", bbox_to_anchor=(1, 1))
                                 
-                                apply_full_border(ax_i); plt.tight_layout(); st.pyplot(fig_imr)
+                                # Auto Zoom Y
+                                valid_y = plot_data.dropna()
+                                ymin, ymax = valid_y.min(), valid_y.max()
+                                y_range = ymax - ymin if ymax > ymin else 10
+                                ax_i.set_ylim(ymin - y_range*0.1, ymax + y_range*0.1)
+                                
+                                apply_full_border(ax_i); plt.tight_layout(rect=[0, 0, 0.85, 1]); st.pyplot(fig_imr)
                                 
                                 buf_i = export_to_word([fig_imr], [f"SPC I-Chart Analysis - {selected_label}"])
                                 st.download_button(label=f"📥 Download SPC Chart ({selected_label})", data=buf_i, file_name=f"SPC_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_spc_{fname}_{selected_label}")
