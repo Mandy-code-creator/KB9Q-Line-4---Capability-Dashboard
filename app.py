@@ -29,7 +29,7 @@ plt.rcParams.update({
     'figure.dpi': 150  
 })
 
-# Bảng màu Tươi & Sắc nét (High-Contrast Vibrant Palette) chống mỏi mắt
+# Bảng màu Tươi & Sắc nét (High-Contrast Vibrant Palette)
 THEME_COLORS = ['#0055FF', '#FF6600', '#00AA00', '#9900FF', '#CC0055', '#009999']
 
 # ==========================================
@@ -62,19 +62,13 @@ def get_limit_series(df, keyword, limit_type, category, length):
         return s
     return pd.Series([np.nan] * length)
 
-def apply_full_border(ax):
-    for spine in ax.spines.values():
-        spine.set_linewidth(2.5)
-        spine.set_color('#111111')
-        spine.set_visible(True)
-
 def format_num(val):
     if val is None or pd.isna(val): return "-"
     rounded = round(float(val), 2)
     return str(int(rounded)) if rounded == int(rounded) else str(rounded)
 
 def format_spec(lsl, usl):
-    """Hàm thông minh tự nhận diện và hiển thị Legend cho giới hạn"""
+    """Hàm thông minh tự nhận diện Legend cho giới hạn"""
     if lsl != -1 and usl != -1:
         return f"{format_num(lsl)}-{format_num(usl)}"
     elif lsl != -1:
@@ -83,6 +77,12 @@ def format_spec(lsl, usl):
         return f"≤ {format_num(usl)}"
     else:
         return "No Spec"
+
+def apply_full_border(ax):
+    for spine in ax.spines.values():
+        spine.set_linewidth(2.5)
+        spine.set_color('#111111')
+        spine.set_visible(True)
 
 def export_to_word(figures, titles):
     doc = Document()
@@ -408,6 +408,7 @@ if uploaded_files:
                                 temp_plot_df['USL_temp'] = int_usl_series.fillna(-1).values
                                 
                                 groups = temp_plot_df.groupby(['LSL_temp', 'USL_temp'])
+                                is_multi_group = len(groups) > 1
                                 
                                 df_calc = plot_df.copy()
                                 grade_col = next((c for c in df.columns if any(kw in str(c).lower() for kw in ['grade', '等级', '等級', 'cấp', 'quality', 'loại'])), None)
@@ -458,25 +459,29 @@ if uploaded_files:
                                     color_idx = 0
                                     for (lsl, usl), group in groups:
                                         c = THEME_COLORS[color_idx % len(THEME_COLORS)]
-                                        mask = temp_plot_df.index.isin(group.index)
                                         
+                                        # Nếu chỉ có 1 nhóm, áp dụng chuẩn màu hiển thị Minitab
+                                        c_mean = c if is_multi_group else "#0055FF"
+                                        c_limit = c if is_multi_group else "#FF0000"
+                                        
+                                        mask = temp_plot_df.index.isin(group.index)
                                         spec_txt = format_spec(lsl, usl)
                                         
                                         group_mean = group[data_col].mean()
                                         
                                         # Mean Line
-                                        ax_t.axhline(group_mean, color=c, linestyle="-", linewidth=2.0, alpha=0.7, label="Group Mean")
-                                        add_to_label(group_mean, "Mean", c)
+                                        ax_t.axhline(group_mean, color=c_mean, linestyle="-", linewidth=2.0, alpha=0.7, label="Group Mean" if color_idx==0 else None)
+                                        add_to_label(group_mean, "Mean", c_mean)
                                         
                                         # Int Limits
                                         if lsl != -1: 
-                                            ax_t.axhline(lsl, color=c, linestyle="--", linewidth=2.0, alpha=1.0)
-                                            add_to_label(lsl, "Int LSL", c)
+                                            ax_t.axhline(lsl, color=c_limit, linestyle="--", linewidth=2.0, alpha=1.0)
+                                            add_to_label(lsl, "Int LSL", c_limit)
                                         if usl != -1: 
-                                            ax_t.axhline(usl, color=c, linestyle="--", linewidth=2.0, alpha=1.0)
-                                            add_to_label(usl, "Int USL", c)
+                                            ax_t.axhline(usl, color=c_limit, linestyle="--", linewidth=2.0, alpha=1.0)
+                                            add_to_label(usl, "Int USL", c_limit)
                                             
-                                        # Data Points (Sử dụng spec_txt thông minh)
+                                        # Data Points
                                         ax_t.scatter(x_coords[mask], plot_data[mask], color=c, s=45, edgecolor="black", linewidth=1.0, zorder=4, label=f"Data ({spec_txt})")
                                         color_idx += 1
 
@@ -539,10 +544,11 @@ if uploaded_files:
                                         hist_labels.append(f"Data ({spec_txt})")
                                         color_idx += 1
                                         
-                                    if len(hist_data) > 1:
+                                    if is_multi_group:
                                         ax_d.hist(hist_data, bins=20, stacked=True, density=False, alpha=0.8, edgecolor="black", label=hist_labels, color=THEME_COLORS[:len(hist_data)])
                                     else:
-                                        ax_d.hist(plot_data, bins=20, density=False, alpha=0.6, color="#0055FF", edgecolor="black", label="Data")
+                                        # Khi có 1 nhóm duy nhất: Dùng màu xanh nhạt (Light Blue) cho cột
+                                        ax_d.hist(plot_data, bins=20, density=False, alpha=0.6, color="#7FB3D5", edgecolor="black", label="Data")
 
                                     ax_d.yaxis.set_major_locator(MaxNLocator(integer=True))
                                     ax_d.set_xlabel(f"{selected_label} Value")
@@ -573,10 +579,14 @@ if uploaded_files:
                                     color_idx = 0
                                     for (lsl, usl), group in groups:
                                         c = THEME_COLORS[color_idx % len(THEME_COLORS)]
+                                        
+                                        c_mean = c if is_multi_group else "#0055FF"
+                                        c_limit = c if is_multi_group else "#FF0000"
+                                        
                                         group_mean = group[data_col].mean()
-                                        register_vline(group_mean, c, "-", "Theo. Value" if color_idx==0 else None)
-                                        if lsl != -1: register_vline(lsl, c, "--", "Int LSL" if color_idx==0 else None)
-                                        if usl != -1: register_vline(usl, c, "--", "Int USL" if color_idx==0 else None)
+                                        register_vline(group_mean, c_mean, "-", "Theo. Value" if color_idx==0 else None)
+                                        if lsl != -1: register_vline(lsl, c_limit, "--", "Int LSL" if color_idx==0 else None)
+                                        if usl != -1: register_vline(usl, c_limit, "--", "Int USL" if color_idx==0 else None)
                                         color_idx += 1
 
                                     register_multiple(cust_lsl_series, "#555555", "-", "Cust LSL")
