@@ -398,7 +398,7 @@ if uploaded_files:
                                     buf_t = export_to_word([fig_t], [f"Trend Analysis - {selected_label}"])
                                     st.download_button(label=f"📥 Download Trend Chart ({selected_label})", data=buf_t, file_name=f"Trend_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_trend_{fname}_{selected_label}")
 
-                                with tab_dist:
+                               with tab_dist:
                                     fig_d, ax_d = plt.subplots(figsize=(12, 6))
                                     ax_d.hist(plot_data, bins=20, density=False, alpha=0.4, color="#7FB3D5", edgecolor="black")
                                     ax_d.yaxis.set_major_locator(MaxNLocator(integer=True))
@@ -415,17 +415,28 @@ if uploaded_files:
                                     ax_pdf.set_yticks([])
                                     
                                     def add_vline_std(ax, val, color, ls, label, level=0):
-                                        if val is not None:
+                                        if val is not None and val > 0:  # Chặn các giá trị 0 hoặc âm
                                             ax.axvline(val, color=color, linestyle=ls, linewidth=3, label=label)
                                             trans = ax.get_xaxis_transform()
                                             y_pos = 1.02 + (level * 0.05) 
                                             ax.text(val, y_pos, f"{val:.1f}", color=color, ha='center', va='bottom', transform=trans, fontweight='bold')
 
+                                    def add_multiple_vlines(ax, limit_series, color, ls, base_label, level):
+                                        # Lọc ra tất cả các giá trị giới hạn thực tế (duy nhất và > 0)
+                                        if limit_series is not None and not limit_series.isna().all():
+                                            unique_vals = limit_series.dropna().unique()
+                                            unique_vals = [v for v in unique_vals if v > 0]
+                                            for i, val in enumerate(unique_vals):
+                                                # Chỉ hiện nhãn (label) ở đường đầu tiên để Legend không bị trùng lặp
+                                                label = base_label if i == 0 else None
+                                                add_vline_std(ax, val, color, ls, label, level)
+
+                                    # Vẽ các đường dọc lên biểu đồ phân phối
                                     add_vline_std(ax_d, mu, "blue", "-", "Mean", 0)
-                                    add_vline_std(ax_d, cust_lsl, "green", "-", "Cust LSL", 0)
-                                    add_vline_std(ax_d, cust_usl, "green", "-", "Cust USL", 0)
-                                    add_vline_std(ax_d, int_lsl, "red", "--", "Int LSL", 1)
-                                    add_vline_std(ax_d, int_usl, "red", "--", "Int USL", 1)
+                                    add_multiple_vlines(ax_d, cust_lsl_series, "green", "-", "Cust LSL", 0)
+                                    add_multiple_vlines(ax_d, cust_usl_series, "green", "-", "Cust USL", 0)
+                                    add_multiple_vlines(ax_d, int_lsl_series, "red", "--", "Int LSL", 1)
+                                    add_multiple_vlines(ax_d, int_usl_series, "red", "--", "Int USL", 1)
                                     add_vline_std(ax_d, ucl_v1, "#6A0DAD", ":", "3σ UCL", 2) 
                                     add_vline_std(ax_d, lcl_v1, "#6A0DAD", ":", "3σ LCL", 2) 
                                     
