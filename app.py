@@ -113,7 +113,7 @@ if uploaded_files:
     ])
 
     # =========================================================================
-    # MODE 1: CROSS-LINE COMPARISON 
+    # MODE 1: CROSS-LINE COMPARISON (PHÂN TÍCH THEO ĐỘ DÀY)
     # =========================================================================
     if view_mode == "Cross-Line Comparison 🔀":
         st.title("🔀 Statistical Process Shift & Limits Recommendation")
@@ -146,44 +146,42 @@ if uploaded_files:
                     temp_ma = df_ma.copy()
                     temp_ma['val'] = pd.to_numeric(temp_ma[col_ma], errors='coerce')
                     temp_ma = temp_ma.dropna(subset=['val']).reset_index(drop=True)
-                    n_ma = len(temp_ma)
 
                     temp_son = df_son.copy()
                     temp_son['val'] = pd.to_numeric(temp_son[col_son], errors='coerce')
                     temp_son = temp_son.dropna(subset=['val']).reset_index(drop=True)
-                    n_son = len(temp_son)
 
-                    ma_lsl = get_limit_series(temp_ma, zh_key, "min", "管制", n_ma).fillna(-1)
-                    ma_usl = get_limit_series(temp_ma, zh_key, "max", "管制", n_ma).fillna(-1)
-                    temp_ma['Spec_Group'] = list(zip(ma_lsl, ma_usl))
-
-                    son_lsl = get_limit_series(temp_son, zh_key, "min", "管制", n_son).fillna(-1)
-                    son_usl = get_limit_series(temp_son, zh_key, "max", "管制", n_son).fillna(-1)
-                    
-                    if short_key == "YPE":
-                        temp_son['Spec_Group'] = list(zip(pd.Series([4.0]*n_son), son_usl))
-                    else:
-                        temp_son['Spec_Group'] = list(zip(son_lsl, son_usl))
-
-                    specs_ma = set(temp_ma['Spec_Group'].unique())
-                    specs_son = set(temp_son['Spec_Group'].unique())
-                    common_specs = specs_ma.intersection(specs_son)
+                    # --- TÌM VÀ PHÂN NHÓM THEO ĐỘ DÀY (THICKNESS) ---
+                    thick_col_ma = next((c for c in temp_ma.columns if "厚度" in str(c) or "thickness" in str(c).lower()), None)
+                    thick_col_son = next((c for c in temp_son.columns if "厚度" in str(c) or "thickness" in str(c).lower()), None)
 
                     groups_to_compare = []
-                    
-                    if not common_specs:
-                        st.info(f"ℹ️ Không có khung giới hạn chung cho {selected_label}. Chuyển sang chế độ phân tích tổng thể.")
-                        groups_to_compare.append(("Toàn bộ dữ liệu (Global)", temp_ma, temp_son, -1, -1))
-                    else:
-                        for spec in sorted(list(common_specs)):
-                            lsl, usl = spec
-                            spec_str = f"Nhóm Spec: {format_num(lsl) if lsl != -1 else 'N/A'} - {format_num(usl) if usl != -1 else 'N/A'}"
-                            group_ma = temp_ma[temp_ma['Spec_Group'] == spec]
-                            group_son = temp_son[temp_son['Spec_Group'] == spec]
-                            groups_to_compare.append((spec_str, group_ma, group_son, lsl, usl))
 
-                    for spec_str, group_ma, group_son, lsl, usl in groups_to_compare:
-                        st.markdown(f"<h3 style='color: #D35400;'>📌 Phân tích: {spec_str}</h3>", unsafe_allow_html=True)
+                    if thick_col_ma and thick_col_son:
+                        temp_ma['Thick_Num'] = pd.to_numeric(temp_ma[thick_col_ma], errors='coerce')
+                        temp_son['Thick_Num'] = pd.to_numeric(temp_son[thick_col_son], errors='coerce')
+                        
+                        ma_g1 = temp_ma[temp_ma['Thick_Num'] <= 0.60].copy()
+                        son_g1 = temp_son[temp_son['Thick_Num'] <= 0.60].copy()
+                        if not ma_g1.empty and not son_g1.empty:
+                            groups_to_compare.append(("Độ dày (Thickness) <= 0.60", ma_g1, son_g1))
+                            
+                        ma_g2 = temp_ma[temp_ma['Thick_Num'] > 0.60].copy()
+                        son_g2 = temp_son[temp_son['Thick_Num'] > 0.60].copy()
+                        if not ma_g2.empty and not son_g2.empty:
+                            groups_to_compare.append(("Độ dày (Thickness) > 0.60", ma_g2, son_g2))
+                    
+                    if not groups_to_compare:
+                        st.info(f"ℹ️ Không tìm thấy dữ liệu phân chia độ dày cho {selected_label}. Chuyển sang chế độ phân tích tổng thể.")
+                        groups_to_compare.append(("Toàn bộ dữ liệu (Global)", temp_ma, temp_son))
+                    # -----------------------------------------------
+
+                    for group_info in groups_to_compare:
+                        group_name = group_info[0]
+                        group_ma = group_info[1]
+                        group_son = group_info[2]
+
+                        st.markdown(f"<h3 style='color: #D35400;'>📌 Phân tích: {group_name}</h3>", unsafe_allow_html=True)
 
                         vals_ma_full = group_ma['val']
                         vals_son_full = group_son['val']
@@ -201,20 +199,30 @@ if uploaded_files:
                         
                         delta = mean_son - mean_ma if pd.notnull(mean_son) and pd.notnull(mean_ma) else 0
 
-                        lsl_son = lsl if lsl != -1 else None
-                        usl_son = usl if usl != -1 else None
+                        # Lấy giới hạn nội bộ phổ biến nhất (Mode) của nhóm độ dày này để khuyến nghị
+                        son_lsl_series = get_limit_series(group_son, zh_key, "min", "管制", len(group_son))
+                        son_usl_series = get_limit_series(group_son, zh_key, "max", "管制", len(group_son))
+                        
+                        lsl_vals = son_lsl_series[son_lsl_series > 0]
+                        usl_vals = son_usl_series[son_usl_series > 0]
+                        
+                        lsl_son = lsl_vals.mode()[0] if not lsl_vals.empty else None
+                        usl_son = usl_vals.mode()[0] if not usl_vals.empty else None
+
+                        if short_key == "YPE":
+                            lsl_son = 4.0
 
                         s_lsl = (lsl_son - delta) if lsl_son is not None else "N/A"
                         s_usl = (usl_son - delta) if usl_son is not None else "N/A"
 
                         st.markdown(f"**🔄 Optimal Limits Recommendation**")
                         delta_data = [{
-                            "Phân loại": spec_str,
+                            "Phân loại": group_name,
                             "Galv. Mean (Theo.)": format_num(mean_ma),
                             "Coating Mean (Theo.)": format_num(mean_son),
                             "Shift (Δ)": format_num(delta),
-                            "Current Coating LSL": format_num(lsl_son) if lsl_son is not None else "N/A",
-                            "Current Coating USL": format_num(usl_son) if usl_son is not None else "N/A",
+                            "Current Coating LSL (Mode)": format_num(lsl_son) if lsl_son is not None else "N/A",
+                            "Current Coating USL (Mode)": format_num(usl_son) if usl_son is not None else "N/A",
                             "Recommended Galv. LSL": format_num(s_lsl) if isinstance(s_lsl, (int, float)) else s_lsl,
                             "Recommended Galv. USL": format_num(s_usl) if isinstance(s_usl, (int, float)) else s_usl
                         }]
@@ -260,8 +268,7 @@ if uploaded_files:
                             ax_comp.set_ylabel("Coil Count")
                             ax_comp.set_xlabel(f"{selected_label} Value")
                             
-                            short_title = "Global" if lsl == -1 else f"{format_num(lsl)}-{format_num(usl)}"
-                            ax_comp.set_title(f"Shift Dist. (Δ = {format_num(delta)}) | {short_title}", pad=10)
+                            ax_comp.set_title(f"Shift Dist. (Δ = {format_num(delta)})", pad=10)
                             
                             ax_comp.legend(loc="upper right", fontsize=9)
                             apply_full_border(ax_comp)
@@ -376,7 +383,6 @@ if uploaded_files:
                             n = len(plot_data)
 
                             if view_mode == "Process Analytics":
-                                # TÍNH THEO NHÓM SPEC (CHO TREND & DIST)
                                 int_lsl_series = get_limit_series(plot_df, zh_key, "min", "管制", n)
                                 int_usl_series = get_limit_series(plot_df, zh_key, "max", "管制", n)
                                 cust_lsl_series = get_limit_series(plot_df, zh_key, "min", "客戶要求", n)
@@ -605,7 +611,6 @@ if uploaded_files:
                                     st.download_button(label=f"📥 Download Dist Chart ({selected_label})", data=buf_d, file_name=f"Dist_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_dist_{fname}_{selected_label}")
 
                             elif view_mode == "SPC Control Charts (I-MR)":
-                                # TÍNH THEO NHÓM ĐỘ DÀY (THICKNESS) CHO SPC MÀ THÔI
                                 thick_col = next((c for c in df.columns if "厚度" in str(c) or "thickness" in str(c).lower()), None)
                                 
                                 spc_groups = []
@@ -656,7 +661,6 @@ if uploaded_files:
                                 fig_imr, ax_i = plt.subplots(figsize=(13, 6.5)) 
                                 x_coords_spc = np.arange(1, n+1)
                                 
-                                # Xương sống nối điểm mờ
                                 ax_i.plot(x_coords_spc, plot_data, color="#CFD8DC", linestyle="-", linewidth=1.5, zorder=1)
                                 
                                 color_idx = 0
@@ -673,17 +677,14 @@ if uploaded_files:
                                         g_q1, g_q3 = g_data.quantile(0.25), g_data.quantile(0.75)
                                         g_iqr = g_q3 - g_q1
                                         
-                                        # Điểm dữ liệu
                                         ax_i.scatter(x_coords_spc[mask], plot_data[mask], color=c, s=50, edgecolor="black", zorder=3, label=f"Data ({g_name})")
                                         
-                                        # Group Mean (Nét liền)
+                                        # Vẽ Mean riêng cho nhóm dạng Line đứt đoạn
                                         ax_i.plot(x_coords_spc, np.where(mask, g_mu, np.nan), color=c, linestyle="-", linewidth=2, alpha=0.7)
                                         
-                                        # Sigma Limits (Nét đứt)
                                         ax_i.plot(x_coords_spc, np.where(mask, g_mu + k_std*g_sig, np.nan), color=c, linestyle="--", linewidth=1.5)
                                         ax_i.plot(x_coords_spc, np.where(mask, g_mu - k_std*g_sig, np.nan), color=c, linestyle="--", linewidth=1.5)
                                         
-                                        # IQR Limits (Nét chấm)
                                         ax_i.plot(x_coords_spc, np.where(mask, g_q3 + k_iqr*g_iqr, np.nan), color=c, linestyle=":", linewidth=2, alpha=0.6)
                                         ax_i.plot(x_coords_spc, np.where(mask, g_q1 - k_iqr*g_iqr, np.nan), color=c, linestyle=":", linewidth=2, alpha=0.6)
 
@@ -693,7 +694,6 @@ if uploaded_files:
                                 ax_i.set_ylabel(f"{selected_label} Value")
                                 ax_i.set_title(f"I-Chart: Dynamic Control Limits ({selected_label})", pad=20)
                                 
-                                # Tạo Legend custom thông minh
                                 custom_lines = [
                                     mlines.Line2D([], [], color='black', linestyle='-', lw=2, alpha=0.7, label='Group Mean'),
                                     mlines.Line2D([], [], color='black', linestyle='--', lw=1.5, label=f'UCL/LCL ({k_std}σ)'),
@@ -704,7 +704,6 @@ if uploaded_files:
                                 by_label = dict(zip(labels, handles))
                                 ax_i.legend(list(by_label.values()) + custom_lines, list(by_label.keys()) + [l.get_label() for l in custom_lines], loc="upper left", bbox_to_anchor=(1, 1))
                                 
-                                # Auto Zoom Y
                                 valid_y = plot_data.dropna()
                                 ymin, ymax = valid_y.min(), valid_y.max()
                                 y_range = ymax - ymin if ymax > ymin else 10
