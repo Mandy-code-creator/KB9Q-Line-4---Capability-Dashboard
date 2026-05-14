@@ -112,7 +112,7 @@ if uploaded_files:
     ])
 
     # =========================================================================
-    # MODE 1: CROSS-LINE COMPARISON (UPDATED FOR MIXED-SPEC)
+    # MODE 1: CROSS-LINE COMPARISON 
     # =========================================================================
     if view_mode == "Cross-Line Comparison 🔀":
         st.title("🔀 Statistical Process Shift & Limits Recommendation")
@@ -142,19 +142,16 @@ if uploaded_files:
                     col_ma = find_data_col(df_ma, short_key)
                     col_son = find_data_col(df_son, short_key)
 
-                    # Chuẩn bị dữ liệu Mạ
                     temp_ma = df_ma.copy()
                     temp_ma['val'] = pd.to_numeric(temp_ma[col_ma], errors='coerce')
                     temp_ma = temp_ma.dropna(subset=['val']).reset_index(drop=True)
                     n_ma = len(temp_ma)
 
-                    # Chuẩn bị dữ liệu Sơn
                     temp_son = df_son.copy()
                     temp_son['val'] = pd.to_numeric(temp_son[col_son], errors='coerce')
                     temp_son = temp_son.dropna(subset=['val']).reset_index(drop=True)
                     n_son = len(temp_son)
 
-                    # Lấy giới hạn nội bộ để nhóm (Tách riêng các Spec)
                     ma_lsl = get_limit_series(temp_ma, zh_key, "min", "管制", n_ma).fillna(-1)
                     ma_usl = get_limit_series(temp_ma, zh_key, "max", "管制", n_ma).fillna(-1)
                     temp_ma['Spec_Group'] = list(zip(ma_lsl, ma_usl))
@@ -162,30 +159,34 @@ if uploaded_files:
                     son_lsl = get_limit_series(temp_son, zh_key, "min", "管制", n_son).fillna(-1)
                     son_usl = get_limit_series(temp_son, zh_key, "max", "管制", n_son).fillna(-1)
                     
-                    # Ép YPE LSL = 4.0 cho dây chuyền Sơn
                     if short_key == "YPE":
                         temp_son['Spec_Group'] = list(zip(pd.Series([4.0]*n_son), son_usl))
                     else:
                         temp_son['Spec_Group'] = list(zip(son_lsl, son_usl))
 
-                    # Tìm các nhóm Spec chung giữa 2 dây chuyền
                     specs_ma = set(temp_ma['Spec_Group'].unique())
                     specs_son = set(temp_son['Spec_Group'].unique())
                     common_specs = specs_ma.intersection(specs_son)
 
+                    # TẠO DANH SÁCH NHÓM CẦN PHÂN TÍCH (CÓ FALLBACK)
+                    groups_to_compare = []
+                    
                     if not common_specs:
-                        st.warning(f"⚠️ Không tìm thấy khung giới hạn chung nào giữa 2 dây chuyền cho {selected_label}.")
-                        continue
+                        st.info(f"ℹ️ Không có khung giới hạn chung cho {selected_label}. Chuyển sang chế độ phân tích tổng thể.")
+                        # Nếu rỗng -> Lấy toàn bộ dữ liệu làm 1 nhóm duy nhất
+                        groups_to_compare.append(("Toàn bộ dữ liệu (Global)", temp_ma, temp_son, -1, -1))
+                    else:
+                        # Nếu có -> Tách riêng từng nhóm Spec
+                        for spec in sorted(list(common_specs)):
+                            lsl, usl = spec
+                            spec_str = f"Nhóm Spec: {format_num(lsl) if lsl != -1 else 'N/A'} - {format_num(usl) if usl != -1 else 'N/A'}"
+                            group_ma = temp_ma[temp_ma['Spec_Group'] == spec]
+                            group_son = temp_son[temp_son['Spec_Group'] == spec]
+                            groups_to_compare.append((spec_str, group_ma, group_son, lsl, usl))
 
-                    # Lặp qua từng nhóm Spec để tính toán độc lập
-                    for spec in sorted(list(common_specs)):
-                        lsl, usl = spec
-                        spec_str = f"{format_num(lsl) if lsl != -1 else 'N/A'} - {format_num(usl) if usl != -1 else 'N/A'}"
-                        
-                        st.markdown(f"<h3 style='color: #D35400;'>📌 Spec Group Analysis: {spec_str}</h3>", unsafe_allow_html=True)
-
-                        group_ma = temp_ma[temp_ma['Spec_Group'] == spec]
-                        group_son = temp_son[temp_son['Spec_Group'] == spec]
+                    # CHẠY VÒNG LẶP PHÂN TÍCH CHO TỪNG NHÓM (HOẶC NHÓM GLOBAL)
+                    for spec_str, group_ma, group_son, lsl, usl in groups_to_compare:
+                        st.markdown(f"<h3 style='color: #D35400;'>📌 Phân tích: {spec_str}</h3>", unsafe_allow_html=True)
 
                         vals_ma_full = group_ma['val']
                         vals_son_full = group_son['val']
@@ -201,7 +202,6 @@ if uploaded_files:
                         mean_ma = get_theoretical_mean_group(group_ma)
                         mean_son = get_theoretical_mean_group(group_son)
                         
-                        # Tính Shift (Delta)
                         delta = mean_son - mean_ma if pd.notnull(mean_son) and pd.notnull(mean_ma) else 0
 
                         lsl_son = lsl if lsl != -1 else None
@@ -212,7 +212,7 @@ if uploaded_files:
 
                         st.markdown(f"**🔄 Optimal Limits Recommendation**")
                         delta_data = [{
-                            "Spec Group": spec_str,
+                            "Phân loại": spec_str,
                             "Galv. Mean (Theo.)": format_num(mean_ma),
                             "Coating Mean (Theo.)": format_num(mean_son),
                             "Shift (Δ)": format_num(delta),
@@ -223,7 +223,6 @@ if uploaded_files:
                         }]
                         st.dataframe(pd.DataFrame(delta_data), hide_index=True, use_container_width=True)
 
-                        # T-Test cho nhóm
                         if len(vals_son_full) > 1 and len(vals_ma_full) > 1:
                             t_stat, p_val = ttest_ind(vals_son_full, vals_ma_full, equal_var=False)
                             is_significant = "YES" if p_val < 0.05 else "NO"
@@ -242,7 +241,6 @@ if uploaded_files:
                             }])
                             st.table(t_test_data)
 
-                        # Biểu đồ phân phối cho nhóm
                         with c2:
                             fig_comp, ax_comp = plt.subplots(figsize=(8, 4))
                             
@@ -264,7 +262,10 @@ if uploaded_files:
                             
                             ax_comp.set_ylabel("Coil Count")
                             ax_comp.set_xlabel(f"{selected_label} Value")
-                            ax_comp.set_title(f"Shift Dist. (Δ = {format_num(delta)}) | Spec: {spec_str}", pad=10)
+                            
+                            short_title = "Global" if lsl == -1 else f"{format_num(lsl)}-{format_num(usl)}"
+                            ax_comp.set_title(f"Shift Dist. (Δ = {format_num(delta)}) | {short_title}", pad=10)
+                            
                             ax_comp.legend(loc="upper right", fontsize=9)
                             apply_full_border(ax_comp)
                             plt.tight_layout()
@@ -439,7 +440,6 @@ if uploaded_files:
                                         l_str = "N/A" if lsl == -1 else format_num(lsl)
                                         u_str = "N/A" if usl == -1 else format_num(usl)
                                         
-                                        # Vẽ Mean riêng cho nhóm dạng Line đứt đoạn (Không có nét dọc kéo xuống)
                                         group_mean = group[data_col].mean()
                                         ax_t.plot(x_coords, np.where(mask, group_mean, np.nan), color="blue", linestyle="-", linewidth=1.5, alpha=0.6, label="Group Mean")
                                         
@@ -638,7 +638,6 @@ if uploaded_files:
                                     l_str = "N/A" if lsl == -1 else format_num(lsl)
                                     u_str = "N/A" if usl == -1 else format_num(usl)
                                     
-                                    # Vẽ Mean riêng cho nhóm dạng Line đứt đoạn
                                     group_mean = group[data_col].mean()
                                     ax_i.plot(x_coords_spc, np.where(mask, group_mean, np.nan), color="blue", linestyle="-", linewidth=1.5, alpha=0.6, label="Group Mean")
 
