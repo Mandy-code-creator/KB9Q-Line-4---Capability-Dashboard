@@ -29,8 +29,8 @@ plt.rcParams.update({
     'figure.dpi': 150  
 })
 
-# Bảng màu dịu mắt (Corporate Muted Palette) chống chói
-MUTED_COLORS = ['#4A90E2', '#E67E22', '#27AE60', '#9B59B6', '#34495E', '#F1C40F']
+# Bảng màu Tươi & Sắc nét (High-Contrast Vibrant Palette) chống mỏi mắt
+THEME_COLORS = ['#0055FF', '#FF6600', '#00AA00', '#9900FF', '#CC0055', '#009999']
 
 # ==========================================
 # 2. UTILITY FUNCTIONS
@@ -65,7 +65,7 @@ def get_limit_series(df, keyword, limit_type, category, length):
 def apply_full_border(ax):
     for spine in ax.spines.values():
         spine.set_linewidth(2.5)
-        spine.set_color('#2C3E50')
+        spine.set_color('#111111')
         spine.set_visible(True)
 
 def format_num(val):
@@ -250,8 +250,8 @@ if uploaded_files:
                             fig_comp, ax_comp = plt.subplots(figsize=(8, 4))
                             
                             for label_name, vals, color in [
-                                (f"Galvanizing (n={len(vals_ma_full)})", vals_ma_full, MUTED_COLORS[0]),
-                                (f"Coating (n={len(vals_son_full)})", vals_son_full, MUTED_COLORS[1])
+                                (f"Galvanizing (n={len(vals_ma_full)})", vals_ma_full, THEME_COLORS[0]),
+                                (f"Coating (n={len(vals_son_full)})", vals_son_full, THEME_COLORS[1])
                             ]:
                                 if len(vals) > 1 and vals.std() > 0:
                                     mu_val = vals.mean()
@@ -395,7 +395,6 @@ if uploaded_files:
                                 
                                 groups = temp_plot_df.groupby(['LSL_temp', 'USL_temp'])
                                 
-                                # FIX: TÍNH TOÁN MU & SIGMA_FIXED CHO TOÀN BỘ ĐỂ VẼ NORMAL FIT
                                 df_calc = plot_df.copy()
                                 grade_col = next((c for c in df.columns if any(kw in str(c).lower() for kw in ['grade', '等级', '等級', 'cấp', 'quality', 'loại'])), None)
                                 if grade_col:
@@ -429,48 +428,48 @@ if uploaded_files:
                                         if not any(item['name'] == name for item in label_dict[val]):
                                             label_dict[val].append({'name': name, 'color': color})
 
-                                    # 1. ĐƯỜNG GIỚI HẠN KHÁCH HÀNG (Đường đứt xuyên suốt)
+                                    # 1. ĐƯỜNG GIỚI HẠN KHÁCH HÀNG (Đậm, Rõ Nét)
                                     if not cust_lsl_series.isna().all():
                                         for c_val in cust_lsl_series.dropna().unique():
                                             if c_val > 0: 
-                                                ax_t.axhline(c_val, color="#95A5A6", linestyle=":", linewidth=2, alpha=0.7)
-                                                add_to_label(c_val, "Cust LSL", "#95A5A6")
+                                                ax_t.axhline(c_val, color="#555555", linestyle=":", linewidth=2.0, alpha=0.9)
+                                                add_to_label(c_val, "Cust LSL", "#555555")
                                     if not cust_usl_series.isna().all():
                                         for c_val in cust_usl_series.dropna().unique():
                                             if c_val > 0: 
-                                                ax_t.axhline(c_val, color="#95A5A6", linestyle=":", linewidth=2, alpha=0.7)
-                                                add_to_label(c_val, "Cust USL", "#95A5A6")
+                                                ax_t.axhline(c_val, color="#555555", linestyle=":", linewidth=2.0, alpha=0.9)
+                                                add_to_label(c_val, "Cust USL", "#555555")
 
-                                    # 2. VẼ ĐƯỜNG MEAN & GIỚI HẠN NỘI BỘ (Đường thẳng tắp, xuyên suốt)
+                                    # 2. VẼ ĐƯỜNG MEAN & GIỚI HẠN NỘI BỘ (Sắc nét, Không mờ, Màu Tươi)
                                     color_idx = 0
                                     for (lsl, usl), group in groups:
-                                        c = MUTED_COLORS[color_idx % len(MUTED_COLORS)]
+                                        c = THEME_COLORS[color_idx % len(THEME_COLORS)]
                                         mask = temp_plot_df.index.isin(group.index)
                                         l_str = "N/A" if lsl == -1 else format_num(lsl)
                                         u_str = "N/A" if usl == -1 else format_num(usl)
                                         
                                         group_mean = group[data_col].mean()
                                         
-                                        # Mean Line (Liền mạch ngang)
-                                        ax_t.axhline(group_mean, color=c, linestyle="-", linewidth=1.5, alpha=0.5, label="Group Mean")
+                                        # Mean Line (Nét mạnh hơn)
+                                        ax_t.axhline(group_mean, color=c, linestyle="-", linewidth=2.0, alpha=0.7, label="Group Mean")
                                         add_to_label(group_mean, "Mean", c)
                                         
-                                        # Int Limits (Đứt mạch ngang)
+                                        # Int Limits (Solid & Rõ nét)
                                         if lsl != -1: 
-                                            ax_t.axhline(lsl, color=c, linestyle="--", linewidth=1.5, alpha=0.8)
+                                            ax_t.axhline(lsl, color=c, linestyle="--", linewidth=2.0, alpha=1.0)
                                             add_to_label(lsl, "Int LSL", c)
                                         if usl != -1: 
-                                            ax_t.axhline(usl, color=c, linestyle="--", linewidth=1.5, alpha=0.8)
+                                            ax_t.axhline(usl, color=c, linestyle="--", linewidth=2.0, alpha=1.0)
                                             add_to_label(usl, "Int USL", c)
                                             
-                                        # Data Points
-                                        ax_t.scatter(x_coords[mask], plot_data[mask], color=c, s=40, edgecolor="#2C3E50", linewidth=0.8, zorder=4, label=f"Data ({l_str}-{u_str})")
+                                        # Data Points (Viền đen sắc sảo)
+                                        ax_t.scatter(x_coords[mask], plot_data[mask], color=c, s=45, edgecolor="black", linewidth=1.0, zorder=4, label=f"Data ({l_str}-{u_str})")
                                         color_idx += 1
 
-                                    # 3. HIGHLIGHT ĐIỂM LỖI (Màu đỏ dịu hơn)
+                                    # 3. HIGHLIGHT ĐIỂM LỖI (Đỏ thuần, viền đen)
                                     mask_out = (plot_data < lower_bound) | (plot_data > upper_bound)
                                     if mask_out.any():
-                                        ax_t.scatter(x_coords[mask_out], plot_data[mask_out], color="#C0392B", s=50, edgecolor="#641E16", linewidth=1.2, zorder=6, label="Out of Limit")
+                                        ax_t.scatter(x_coords[mask_out], plot_data[mask_out], color="#FF0000", s=60, edgecolor="#800000", linewidth=1.5, zorder=6, label="Out of Limit")
 
                                     # 4. TỰ ĐỘNG CĂN TRỤC Y VÀ CHỐNG ĐÈ CHỮ LỀ PHẢI
                                     valid_y = plot_data.dropna()
@@ -496,9 +495,9 @@ if uploaded_files:
                                         if y_draw - last_y < min_y_dist:
                                             y_draw = last_y + min_y_dist
                                             
-                                        ax_t.plot([n, n + (n*0.02)], [val, y_draw], color="black", linestyle="-", lw=0.8, alpha=0.3)
-                                        bbox = dict(boxstyle="round,pad=0.3", fc="#FDFEFE", ec=main_color, alpha=0.9, lw=1.2)
-                                        ax_t.text(n + (n*0.025), y_draw, f"{names_str}: {val:.1f}", color=main_color, va='center', ha='left', fontsize=9, bbox=bbox, fontweight='bold')
+                                        ax_t.plot([n, n + (n*0.02)], [val, y_draw], color="black", linestyle="-", lw=1.0, alpha=0.4)
+                                        bbox = dict(boxstyle="round,pad=0.3", fc="#FFFFFF", ec=main_color, alpha=0.95, lw=1.5)
+                                        ax_t.text(n + (n*0.025), y_draw, f"{names_str}: {val:.1f}", color=main_color, va='center', ha='left', fontsize=10, bbox=bbox, fontweight='bold')
                                         last_y = y_draw
 
                                     ax_t.set_xlabel("Coil Sequence")
@@ -528,9 +527,9 @@ if uploaded_files:
                                         color_idx += 1
                                         
                                     if len(hist_data) > 1:
-                                        ax_d.hist(hist_data, bins=20, stacked=True, density=False, alpha=0.7, edgecolor="black", label=hist_labels, color=MUTED_COLORS[:len(hist_data)])
+                                        ax_d.hist(hist_data, bins=20, stacked=True, density=False, alpha=0.8, edgecolor="black", label=hist_labels, color=THEME_COLORS[:len(hist_data)])
                                     else:
-                                        ax_d.hist(plot_data, bins=20, density=False, alpha=0.5, color="#4A90E2", edgecolor="black", label="Data")
+                                        ax_d.hist(plot_data, bins=20, density=False, alpha=0.6, color="#0055FF", edgecolor="black", label="Data")
 
                                     ax_d.yaxis.set_major_locator(MaxNLocator(integer=True))
                                     ax_d.set_xlabel(f"{selected_label} Value")
@@ -542,7 +541,7 @@ if uploaded_files:
                                     
                                     bin_w = (plot_data.max() - plot_data.min()) / 20 if plot_data.max() > plot_data.min() else 1
                                     y_vals = norm.pdf(xs, safe_mu, safe_sigma) * n * bin_w
-                                    ax_pdf.plot(xs, y_vals, color="#34495E", lw=3, label="Normal Fit")
+                                    ax_pdf.plot(xs, y_vals, color="#111111", lw=3, label="Normal Fit")
                                     ax_pdf.set_yticks([])
                                     
                                     lines_to_draw = []
@@ -560,15 +559,15 @@ if uploaded_files:
 
                                     color_idx = 0
                                     for (lsl, usl), group in groups:
-                                        c = MUTED_COLORS[color_idx % len(MUTED_COLORS)]
+                                        c = THEME_COLORS[color_idx % len(THEME_COLORS)]
                                         group_mean = group[data_col].mean()
                                         register_vline(group_mean, c, "-", "Theo. Value" if color_idx==0 else None)
                                         if lsl != -1: register_vline(lsl, c, "--", "Int LSL" if color_idx==0 else None)
                                         if usl != -1: register_vline(usl, c, "--", "Int USL" if color_idx==0 else None)
                                         color_idx += 1
 
-                                    register_multiple(cust_lsl_series, "#95A5A6", "-", "Cust LSL")
-                                    register_multiple(cust_usl_series, "#95A5A6", "-", "Cust USL")
+                                    register_multiple(cust_lsl_series, "#555555", "-", "Cust LSL")
+                                    register_multiple(cust_usl_series, "#555555", "-", "Cust USL")
 
                                     lines_to_draw.sort(key=lambda x: x['val'])
                                     x_range = x_max_fit - x_min_fit
@@ -678,7 +677,7 @@ if uploaded_files:
                                 color_idx = 0
                                 
                                 for g_name, group in spc_groups:
-                                    c = MUTED_COLORS[color_idx % len(MUTED_COLORS)]
+                                    c = THEME_COLORS[color_idx % len(THEME_COLORS)]
                                     mask = temp_spc_df.index.isin(group.index)
                                     g_data = group[data_col].dropna()
                                     
@@ -688,14 +687,14 @@ if uploaded_files:
                                         g_q1, g_q3 = g_data.quantile(0.25), g_data.quantile(0.75)
                                         g_iqr = g_q3 - g_q1
                                         
-                                        ax_i.scatter(x_coords_spc[mask], plot_data[mask], color=c, s=40, edgecolor="#2C3E50", zorder=3, label=f"Data ({g_name})")
+                                        ax_i.scatter(x_coords_spc[mask], plot_data[mask], color=c, s=45, edgecolor="black", linewidth=1.0, zorder=3, label=f"Data ({g_name})")
                                         
-                                        ax_i.axhline(g_mu, color=c, linestyle="-", linewidth=1.5, alpha=0.5)
-                                        ax_i.axhline(g_mu + k_std*g_sig, color=c, linestyle="--", linewidth=1.5, alpha=0.5)
-                                        ax_i.axhline(g_mu - k_std*g_sig, color=c, linestyle="--", linewidth=1.5, alpha=0.5)
+                                        ax_i.axhline(g_mu, color=c, linestyle="-", linewidth=2.0, alpha=0.8)
+                                        ax_i.axhline(g_mu + k_std*g_sig, color=c, linestyle="--", linewidth=1.8, alpha=0.8)
+                                        ax_i.axhline(g_mu - k_std*g_sig, color=c, linestyle="--", linewidth=1.8, alpha=0.8)
                                         
-                                        ax_i.axhline(g_q3 + k_iqr*g_iqr, color=c, linestyle=":", linewidth=2, alpha=0.6)
-                                        ax_i.axhline(g_q1 - k_iqr*g_iqr, color=c, linestyle=":", linewidth=2, alpha=0.6)
+                                        ax_i.axhline(g_q3 + k_iqr*g_iqr, color=c, linestyle=":", linewidth=2.5, alpha=0.8)
+                                        ax_i.axhline(g_q1 - k_iqr*g_iqr, color=c, linestyle=":", linewidth=2.5, alpha=0.8)
 
                                     color_idx += 1
                                 
@@ -704,9 +703,9 @@ if uploaded_files:
                                 ax_i.set_title(f"I-Chart: Dynamic Control Limits ({selected_label})", pad=20)
                                 
                                 custom_lines = [
-                                    mlines.Line2D([], [], color='black', linestyle='-', lw=2, alpha=0.5, label='Group Mean'),
-                                    mlines.Line2D([], [], color='black', linestyle='--', lw=1.5, alpha=0.5, label=f'UCL/LCL ({k_std}σ)'),
-                                    mlines.Line2D([], [], color='black', linestyle=':', lw=2, alpha=0.6, label=f'UCL/LCL (IQR)')
+                                    mlines.Line2D([], [], color='black', linestyle='-', lw=2.0, alpha=0.8, label='Group Mean'),
+                                    mlines.Line2D([], [], color='black', linestyle='--', lw=1.8, alpha=0.8, label=f'UCL/LCL ({k_std}σ)'),
+                                    mlines.Line2D([], [], color='black', linestyle=':', lw=2.5, alpha=0.8, label=f'UCL/LCL (IQR)')
                                 ]
                                 
                                 handles, labels = ax_i.get_legend_handles_labels()
