@@ -364,9 +364,35 @@ if uploaded_files:
                                 with tab_trend:
                                     fig_t, ax_t = plt.subplots(figsize=(12, 6))
                                     x_coords = np.arange(1, n+1)
-                                    
-                                    ax_t.plot(x_coords, plot_data, color="#CFD8DC", linestyle="-", linewidth=1.5, zorder=1)
 
+                                    # 1. TẠO HÀNH LANG DUNG SAI (TOLERANCE CORRIDOR)
+                                    # Sử dụng nền tô màu (Shaded Zone) thay vì các đoạn thẳng đứt khúc gây rối
+                                    if not int_lsl_series.isna().all() and not int_usl_series.isna().all():
+                                        lower_bound = int_lsl_series.ffill().bfill()
+                                        upper_bound = int_usl_series.ffill().bfill()
+                                        
+                                        # Tô nền vùng Đạt (Màu xanh nhạt dịu mắt)
+                                        ax_t.fill_between(x_coords, lower_bound, upper_bound, color='#EAFAF1', alpha=0.9, step='post', label="In-Spec Corridor")
+                                        
+                                        # Viền ranh giới mỏng, liền mạch (Step line)
+                                        ax_t.step(x_coords, lower_bound, color="#27AE60", linestyle="-", linewidth=1.5, alpha=0.8, where='post')
+                                        ax_t.step(x_coords, upper_bound, color="#27AE60", linestyle="-", linewidth=1.5, alpha=0.8, where='post')
+                                    else:
+                                        lower_bound = pd.Series([-np.inf] * n)
+                                        upper_bound = pd.Series([np.inf] * n)
+
+                                    # 2. ĐƯỜNG CUSTOMER LIMIT (Làm mờ đi để không tranh giành sự chú ý)
+                                    if not cust_lsl_series.isna().all():
+                                        c_lower = cust_lsl_series.ffill().bfill()
+                                        ax_t.step(x_coords, c_lower, color="#BDC3C7", linestyle=":", linewidth=1.5, alpha=0.7, where='post', label="Cust Limit")
+                                    if not cust_usl_series.isna().all():
+                                        c_upper = cust_usl_series.ffill().bfill()
+                                        ax_t.step(x_coords, c_upper, color="#BDC3C7", linestyle=":", linewidth=1.5, alpha=0.7, where='post')
+
+                                    # Vẽ Theoretical Mean mờ làm tham chiếu
+                                    ax_t.axhline(mu, color="blue", ls="-", lw=1, alpha=0.3, label=f"Theo. Mean: {mu:.1f}")
+
+                                    # 3. VẼ CÁC ĐIỂM DỮ LIỆU (KHÔNG DÙNG LINE NỐI ĐỂ TRÁNH GIẬT CỤC)
                                     color_idx = 0
                                     for (lsl, usl), group in groups:
                                         c = trend_colors[color_idx % len(trend_colors)]
@@ -375,41 +401,31 @@ if uploaded_files:
                                         l_str = "N/A" if lsl == -1 else format_num(lsl)
                                         u_str = "N/A" if usl == -1 else format_num(usl)
                                         
-                                        # Vẽ điểm Scatter
-                                        ax_t.scatter(x_coords[mask], plot_data[mask], color=c, s=50, edgecolor="black", zorder=3, label=f"Data & Lim ({l_str}-{u_str})")
-                                        
-                                        # Vẽ Line giới hạn nội bộ
-                                        if lsl != -1: 
-                                            ax_t.plot(x_coords, np.where(mask, lsl, np.nan), color=c, linestyle="--", linewidth=2.5)
-                                        if usl != -1: 
-                                            ax_t.plot(x_coords, np.where(mask, usl, np.nan), color=c, linestyle="--", linewidth=2.5)
-                                            
-                                        # Vẽ Cust Limit (Lọc mảng không nhóm)
-                                        clsl_mask = mask & (temp_plot_df['CLSL_temp'] != -1)
-                                        cusl_mask = mask & (temp_plot_df['CUSL_temp'] != -1)
-                                        if clsl_mask.any(): 
-                                            ax_t.plot(x_coords, np.where(clsl_mask, temp_plot_df['CLSL_temp'], np.nan), color=c, linestyle="-", linewidth=1.5, alpha=0.5)
-                                        if cusl_mask.any(): 
-                                            ax_t.plot(x_coords, np.where(cusl_mask, temp_plot_df['CUSL_temp'], np.nan), color=c, linestyle="-", linewidth=1.5, alpha=0.5)
-                                            
+                                        # Kích thước điểm vừa phải, không nối line
+                                        ax_t.scatter(x_coords[mask], plot_data[mask], color=c, s=40, edgecolor="black", linewidth=0.8, zorder=4, label=f"Data ({l_str}-{u_str})")
                                         color_idx += 1
 
-                                    lower_bound = int_lsl_series.fillna(-np.inf)
-                                    upper_bound = int_usl_series.fillna(np.inf)
+                                    # 4. HIGHLIGHT ĐIỂM LỖI (Tinh tế, sang trọng hơn)
                                     mask_out = (plot_data < lower_bound) | (plot_data > upper_bound)
-                                    
                                     if mask_out.any():
-                                        ax_t.scatter(x_coords[mask_out], plot_data[mask_out], color="red", s=150, edgecolor="black", lw=1.5, zorder=5, label="Out of Limit", marker="X")
+                                        ax_t.scatter(x_coords[mask_out], plot_data[mask_out], color="#E74C3C", s=60, edgecolor="darkred", linewidth=1.5, zorder=6, label="Out of Limit")
 
-                                    ax_t.axhline(mu, color="blue", ls="-", lw=1.5, alpha=0.4, label=f"Theo. Mean: {mu:.1f}")
-                                    ax_t.axhline(ucl_v1, color="#6A0DAD", ls=":", lw=2, alpha=0.4, label="3σ UCL/LCL")
-                                    ax_t.axhline(lcl_v1, color="#6A0DAD", ls=":", lw=2, alpha=0.4)
-                                    
+                                    # 5. TỐI ƯU GIAO DIỆN & TRỤC Y (Chống ép bẹp biểu đồ)
                                     ax_t.set_xlabel("Coil Sequence")
                                     ax_t.set_ylabel(f"{selected_label} Value")
                                     ax_t.set_title(f"{selected_label} Trend Analysis (N={n})", pad=20)
                                     
-                                    # Lọc bỏ Label bị trùng lặp trên Trend Chart
+                                    # Khóa trục Y sát vào dữ liệu thực tế (bỏ qua những mốc ở quá xa như y=0 hoặc y=300)
+                                    valid_y = plot_data.dropna()
+                                    if not valid_y.empty:
+                                        ymin, ymax = valid_y.min(), valid_y.max()
+                                        if not int_lsl_series.isna().all():
+                                            ymin = min(ymin, int_lsl_series.min())
+                                            ymax = max(ymax, int_usl_series.max())
+                                        y_range = ymax - ymin
+                                        ax_t.set_ylim(ymin - y_range*0.1, ymax + y_range*0.15)
+                                    
+                                    # Thu gọn bảng chú thích
                                     handles, labels = ax_t.get_legend_handles_labels()
                                     by_label = dict(zip(labels, handles))
                                     ax_t.legend(by_label.values(), by_label.keys(), loc="upper center", bbox_to_anchor=(0.5, -0.15), ncol=4, fontsize=9)
@@ -418,7 +434,6 @@ if uploaded_files:
                                     
                                     buf_t = export_to_word([fig_t], [f"Trend Analysis - {selected_label}"])
                                     st.download_button(label=f"📥 Download Trend Chart ({selected_label})", data=buf_t, file_name=f"Trend_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_trend_{fname}_{selected_label}")
-
                                 with tab_dist:
                                     fig_d, ax_d = plt.subplots(figsize=(12, 6))
                                     
