@@ -50,6 +50,14 @@ def get_limit(df, keyword, limit_type, category):
         return float(val) if pd.notnull(val) and val > 0 else None
     return None
 
+def get_limit_series(df, keyword, limit_type, category, length):
+    """Lấy mảng giới hạn chi tiết cho từng dòng để vẽ biểu đồ động"""
+    col = next((c for c in df.columns if keyword in c and limit_type in c.lower() and category in c), None)
+    if col:
+        # Sử dụng ffill và bfill để xử lý các ô trống (nếu có)
+        return pd.to_numeric(df[col], errors='coerce').ffill().bfill()
+    return pd.Series([None] * length)
+
 def apply_full_border(ax):
     for spine in ax.spines.values():
         spine.set_linewidth(2.5)
@@ -273,9 +281,11 @@ if uploaded_files:
                             sig_v = p_data.std(ddof=1)
                             i_lsl = get_limit(df, zh_key, "min", "管制")
                             i_usl = get_limit(df, zh_key, "max", "管制")
-                            # 👇 [THÊM MỚI TẠI ĐÂY] Ép giới hạn LSL = 4.0 cho YPE của chuyền Sơn
+                            
+                            # Ép giới hạn LSL = 4.0 cho YPE của chuyền Sơn
                             if is_coating_line and short_key == "YPE":
                                 i_lsl = 4.0
+                            
                             cp, ca, cpk, formula, status = "-", "-", "-", "-", "N/A"
                             cpk_val = None
                             if sig_v > 0:
@@ -309,15 +319,15 @@ if uploaded_files:
                         data_col = find_data_col(df, short_key) 
                         zh_key = zh_map_global.get(short_key, short_key)
                         
+                        # Giá trị giới hạn dạng hằng số (Dùng cho biểu đồ phân phối)
                         int_lsl = get_limit(df, zh_key, "min", "管制")
                         int_usl = get_limit(df, zh_key, "max", "管制")
                         cust_lsl = get_limit(df, zh_key, "min", "客戶要求")
                         cust_usl = get_limit(df, zh_key, "max", "客戶要求")
-                        # 👇 CHÈN ĐOẠN NÀY VÀO ĐÂY (Khoảng dòng 167)
-                        # Ép giới hạn nội bộ LSL = 4.0 cho YPE của dây chuyền Sơn phủ
+                        
                         if is_coating_line and short_key == "YPE":
                             int_lsl = 4.0
-                        # 👆 -----------------------------------------------------------
+                        
                         if data_col:
                             temp_df = df.copy()
                             temp_df[data_col] = pd.to_numeric(temp_df[data_col], errors='coerce')
@@ -325,6 +335,16 @@ if uploaded_files:
                             plot_df = temp_df.dropna(subset=[data_col]).reset_index(drop=True)
                             plot_data = plot_df[data_col]
                             n = len(plot_data)
+
+                            # --- [TÍNH TOÁN GIỚI HẠN ĐỘNG CHO TỪNG CUỘN] ---
+                            int_lsl_series = get_limit_series(plot_df, zh_key, "min", "管制", n)
+                            int_usl_series = get_limit_series(plot_df, zh_key, "max", "管制", n)
+                            cust_lsl_series = get_limit_series(plot_df, zh_key, "min", "客戶要求", n)
+                            cust_usl_series = get_limit_series(plot_df, zh_key, "max", "客戶要求", n)
+
+                            if is_coating_line and short_key == "YPE":
+                                int_lsl_series = pd.Series([4.0] * n)
+                            # -----------------------------------------------
 
                             df_calc = plot_df.copy()
                             grade_col = next((c for c in df.columns if any(kw in str(c).lower() for kw in ['grade', '等级', '等級', 'cấp', 'quality', 'loại'])), None)
@@ -345,17 +365,25 @@ if uploaded_files:
                                     x_coords = np.arange(1, n+1)
                                     ax_t.plot(x_coords, plot_data, marker="o", markersize=6, color="#1f77b4", label="Actual Value", zorder=1)
                                     
-                                    mask_out = pd.Series([False] * len(plot_data))
-                                    if int_usl is not None: mask_out = mask_out | (plot_data > int_usl)
-                                    if int_lsl is not None: mask_out = mask_out | (plot_data < int_lsl)
+                                    # Vẽ giới hạn bằng bậc thang (step) thay vì đường ngang (axhline)
+                                    if not int_lsl_series.isnull().all():
+                                        ax_t.step(x_coords, int_lsl_series, color="red", ls="--", lw=2, label="Int LSL", where='mid')
+                                    if not int_usl_series.isnull().all():
+                                        ax_t.step(x_coords, int_usl_series, color="red", ls="--", lw=2, label="Int USL", where='mid')
+                                    if not cust_lsl_series.isnull().all():
+                                        ax_t.step(x_coords, cust_lsl_series, color="green", ls="-", lw=2, label="Cust LSL", where='mid')
+                                    if not cust_usl_series.isnull().all():
+                                        ax_t.step(x_coords, cust_usl_series, color="green", ls="-", lw=2, label="Cust USL", where='mid')
+
+                                    # Xác định điểm vượt giới hạn nội bộ (so sánh từng cuộn với giới hạn riêng của nó)
+                                    lower_bound = int_lsl_series.fillna(-np.inf)
+                                    upper_bound = int_usl_series.fillna(np.inf)
+                                    mask_out = (plot_data < lower_bound) | (plot_data > upper_bound)
+                                    
                                     if mask_out.any():
-                                        ax_t.scatter(x_coords[mask_out], plot_data[mask_out], color="red", s=80, edgecolor="black", zorder=2, label="Out of Int. Limit")
+                                        ax_t.scatter(x_coords[mask_out], plot_data[mask_out], color="red", s=80, edgecolor="black", zorder=5, label="Out of Limit")
 
                                     ax_t.axhline(mu, color="blue", ls="-", lw=2, label=f"Theo. Mean: {mu:.1f}")
-                                    if cust_lsl: ax_t.axhline(cust_lsl, color="green", ls="-", lw=3, label="Cust LSL")
-                                    if cust_usl: ax_t.axhline(cust_usl, color="green", ls="-", lw=3, label="Cust USL")
-                                    if int_lsl: ax_t.axhline(int_lsl, color="red", ls="--", lw=3, label="Int LSL")
-                                    if int_usl: ax_t.axhline(int_usl, color="red", ls="--", lw=3, label="Int USL")
                                     ax_t.axhline(ucl_v1, color="#6A0DAD", ls=":", lw=3, label="3σ UCL")
                                     ax_t.axhline(lcl_v1, color="#6A0DAD", ls=":", lw=3, label="3σ LCL")
                                     
@@ -391,7 +419,6 @@ if uploaded_files:
                                             y_pos = 1.02 + (level * 0.05) 
                                             ax.text(val, y_pos, f"{val:.1f}", color=color, ha='center', va='bottom', transform=trans, fontweight='bold')
 
-                                    # THÊM LẠI ĐẦY ĐỦ CÁC ĐƯỜNG GIỚI HẠN VÀ KIỂM SOÁT
                                     add_vline_std(ax_d, mu, "blue", "-", "Mean", 0)
                                     add_vline_std(ax_d, cust_lsl, "green", "-", "Cust LSL", 0)
                                     add_vline_std(ax_d, cust_usl, "green", "-", "Cust USL", 0)
@@ -428,11 +455,20 @@ if uploaded_files:
                                     }))
 
                                 fig_imr, ax_i = plt.subplots(figsize=(12, 6)) 
-                                ax_i.plot(plot_data, marker="o", color="#1f77b4", label="Actual Data", alpha=0.7)
+                                x_coords_spc = np.arange(1, n+1)
+                                ax_i.plot(x_coords_spc, plot_data, marker="o", color="#1f77b4", label="Actual Data", alpha=0.7)
                                 ax_i.axhline(mu, color="blue", ls="-", lw=2, label="Theoretical Mean")
                                 
-                                if int_lsl: ax_i.axhline(int_lsl, color="red", ls="--", lw=2, label="Current Int LSL")
-                                if int_usl: ax_i.axhline(int_usl, color="red", ls="--", lw=2, label="Current Int USL")
+                                # Áp dụng giới hạn động cho SPC Chart
+                                if not int_lsl_series.isnull().all():
+                                    ax_i.step(x_coords_spc, int_lsl_series, color="red", ls="--", lw=2, label="Int LSL (Dyn)", where='mid')
+                                elif int_lsl is not None:
+                                    ax_i.axhline(int_lsl, color="red", ls="--", lw=2, label="Current Int LSL")
+
+                                if not int_usl_series.isnull().all():
+                                    ax_i.step(x_coords_spc, int_usl_series, color="red", ls="--", lw=2, label="Int USL (Dyn)", where='mid')
+                                elif int_usl is not None:
+                                    ax_i.axhline(int_usl, color="red", ls="--", lw=2, label="Current Int USL")
                                 
                                 ax_i.axhline(mu + k_std*sigma_fixed, color="darkred", ls="-", label=f"Prop USL ({k_std}σ)")
                                 ax_i.axhline(mu - k_std*sigma_fixed, color="darkred", ls="-", label=f"Prop LSL ({k_std}σ)")
