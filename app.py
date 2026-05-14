@@ -398,7 +398,35 @@ if uploaded_files:
 
                                 with tab_dist:
                                     fig_d, ax_d = plt.subplots(figsize=(12, 6))
-                                    ax_d.hist(plot_data, bins=20, density=False, alpha=0.4, color="#7FB3D5", edgecolor="black")
+                                    
+                                    # --- GIẢI QUYẾT VẤN ĐỀ 2: NHÓM DỮ LIỆU THEO TỪNG CẶP GIỚI HẠN ---
+                                    temp_plot_df = plot_df.copy()
+                                    temp_plot_df['LSL_temp'] = int_lsl_series.values
+                                    temp_plot_df['USL_temp'] = int_usl_series.values
+                                    
+                                    # Xử lý các ô trống (nếu có) để không bị lỗi khi nhóm
+                                    temp_plot_df['LSL_temp'] = temp_plot_df['LSL_temp'].fillna(-1)
+                                    temp_plot_df['USL_temp'] = temp_plot_df['USL_temp'].fillna(-1)
+                                    
+                                    hist_data = []
+                                    hist_labels = []
+                                    # Chuẩn bị dải màu phân biệt cho từng Spec
+                                    colors = ['#7FB3D5', '#F5B041', '#58D68D', '#AF7AC5', '#F1948A', '#85C1E9']
+                                    
+                                    groups = temp_plot_df.groupby(['LSL_temp', 'USL_temp'])
+                                    for (lsl, usl), group in groups:
+                                        hist_data.append(group[data_col].values)
+                                        l_str = "N/A" if lsl == -1 else format_num(lsl)
+                                        u_str = "N/A" if usl == -1 else format_num(usl)
+                                        hist_labels.append(f"Data (Spec: {l_str} - {u_str})")
+                                        
+                                    # Vẽ Stacked Histogram (Các mảng màu sẽ chồng lên nhau theo đúng Spec)
+                                    if len(hist_data) > 1:
+                                        ax_d.hist(hist_data, bins=20, stacked=True, density=False, alpha=0.8, edgecolor="black", label=hist_labels, color=colors[:len(hist_data)])
+                                    else:
+                                        ax_d.hist(plot_data, bins=20, density=False, alpha=0.5, color="#7FB3D5", edgecolor="black", label="Data")
+                                    # -----------------------------------------------------------------
+
                                     ax_d.yaxis.set_major_locator(MaxNLocator(integer=True))
                                     ax_d.set_xlabel(f"{selected_label} Value")
                                     ax_d.set_ylabel("Coil Count")
@@ -412,39 +440,48 @@ if uploaded_files:
                                     ax_pdf.plot(xs, y_vals, color="#1E3A8A", lw=3, label="Normal Fit")
                                     ax_pdf.set_yticks([])
                                     
-                                    def add_vline_std(ax, val, color, ls, label, level=0):
-                                        if val is not None and val > 0:  # Chặn các giá trị 0 hoặc âm
-                                            ax.axvline(val, color=color, linestyle=ls, linewidth=3, label=label)
+                                    # --- GIẢI QUYẾT VẤN ĐỀ 1: SO LE & XOAY LABEL ĐỂ TRÁNH ĐÈ TEXT ---
+                                    def add_vline_std(ax, val, color, ls, label, level=0, stagger_idx=0):
+                                        if val is not None and val > 0:  
+                                            ax.axvline(val, color=color, linestyle=ls, linewidth=2.5, label=label)
                                             trans = ax.get_xaxis_transform()
-                                            y_pos = 1.02 + (level * 0.05) 
-                                            ax.text(val, y_pos, f"{val:.1f}", color=color, ha='center', va='bottom', transform=trans, fontweight='bold')
+                                            
+                                            # Đẩy text lên cao dần theo stagger_idx (chia làm 4 nấc) để né nhau
+                                            y_pos = 1.02 + (level * 0.1) + ((stagger_idx % 4) * 0.06) 
+                                            
+                                            # Thêm rotation=45 để chữ xoay nghiêng, tiết kiệm không gian ngang
+                                            ax.text(val, y_pos, f" {val:.1f}", color=color, ha='left', va='bottom', transform=trans, fontweight='bold', rotation=45, fontsize=10)
 
                                     def add_multiple_vlines(ax, limit_series, color, ls, base_label, level):
-                                        # Lọc ra tất cả các giá trị giới hạn thực tế (duy nhất và > 0)
                                         if limit_series is not None and not limit_series.isna().all():
                                             unique_vals = limit_series.dropna().unique()
                                             unique_vals = [v for v in unique_vals if v > 0]
                                             for i, val in enumerate(unique_vals):
-                                                # Chỉ hiện nhãn (label) ở đường đầu tiên để Legend không bị trùng lặp
                                                 label = base_label if i == 0 else None
-                                                add_vline_std(ax, val, color, ls, label, level)
+                                                add_vline_std(ax, val, color, ls, label, level, stagger_idx=i)
 
-                                    # Vẽ các đường dọc lên biểu đồ phân phối
-                                    add_vline_std(ax_d, mu, "blue", "-", "Mean", 0)
+                                    # Vẽ các đường dọc với chỉ số stagger_idx khác nhau
+                                    add_vline_std(ax_d, mu, "blue", "-", "Mean", 0, stagger_idx=3)
                                     add_multiple_vlines(ax_d, cust_lsl_series, "green", "-", "Cust LSL", 0)
                                     add_multiple_vlines(ax_d, cust_usl_series, "green", "-", "Cust USL", 0)
                                     add_multiple_vlines(ax_d, int_lsl_series, "red", "--", "Int LSL", 1)
                                     add_multiple_vlines(ax_d, int_usl_series, "red", "--", "Int USL", 1)
-                                    add_vline_std(ax_d, ucl_v1, "#6A0DAD", ":", "3σ UCL", 2) 
-                                    add_vline_std(ax_d, lcl_v1, "#6A0DAD", ":", "3σ LCL", 2) 
+                                    add_vline_std(ax_d, ucl_v1, "#6A0DAD", ":", "3σ UCL", 2, stagger_idx=0) 
+                                    add_vline_std(ax_d, lcl_v1, "#6A0DAD", ":", "3σ LCL", 2, stagger_idx=0) 
+                                    # -----------------------------------------------------------------
                                     
-                                    ax_d.set_title(f"{selected_label} Distribution (N={n})", pad=55)
-                                    ax_d.legend(loc="upper left", bbox_to_anchor=(1, 1))
+                                    # Tăng pad=80 để đẩy title lên cao, chừa khoảng trống cho text nghiêng
+                                    ax_d.set_title(f"{selected_label} Distribution (N={n})", pad=80) 
+                                    
+                                    # Gom tất cả Legend lại thành một bảng chú thích gọn gàng
+                                    handles, labels = ax_d.get_legend_handles_labels()
+                                    handles_pdf, labels_pdf = ax_pdf.get_legend_handles_labels()
+                                    ax_d.legend(handles + handles_pdf, labels + labels_pdf, loc="upper left", bbox_to_anchor=(1, 1))
+                                    
                                     apply_full_border(ax_d); plt.tight_layout(); st.pyplot(fig_d)
                                     
                                     buf_d = export_to_word([fig_d], [f"Distribution Analysis - {selected_label}"])
                                     st.download_button(label=f"📥 Download Dist Chart ({selected_label})", data=buf_d, file_name=f"Dist_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_dist_{fname}_{selected_label}")
-
                             elif view_mode == "SPC Control Charts (I-MR)":
                                 q1, q3 = calc_data.quantile(0.25), calc_data.quantile(0.75)
                                 iqr_val = q3 - q1
