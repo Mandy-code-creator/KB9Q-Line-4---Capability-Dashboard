@@ -54,9 +54,11 @@ def get_limit_series(df, keyword, limit_type, category, length):
     """Lấy mảng giới hạn chi tiết cho từng dòng để vẽ biểu đồ động"""
     col = next((c for c in df.columns if keyword in c and limit_type in c.lower() and category in c), None)
     if col:
-        # Sử dụng ffill và bfill để xử lý các ô trống (nếu có)
-        return pd.to_numeric(df[col], errors='coerce').ffill().bfill()
-    return pd.Series([None] * length)
+        # Chuyển đổi sang số. mask(s <= 0, np.nan) sẽ biến các số 0 thành NaN để KHÔNG VẼ
+        s = pd.to_numeric(df[col], errors='coerce')
+        s = s.mask(s <= 0, np.nan).ffill().bfill()
+        return s
+    return pd.Series([np.nan] * length)
 
 def apply_full_border(ax):
     for spine in ax.spines.values():
