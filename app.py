@@ -156,24 +156,43 @@ if uploaded_files:
                     col_ma = find_data_col(df_ma, short_key)
                     col_son = find_data_col(df_son, short_key)
 
-                    # Dùng chunk (chỉ copy cột cần thiết) thay vì copy cả Dataframe để tiết kiệm RAM
-                    temp_ma = df_ma[[col_ma]].copy()
-                    temp_ma['val'] = pd.to_numeric(temp_ma[col_ma], errors='coerce')
-                    temp_ma = temp_ma.dropna(subset=['val']).reset_index(drop=True)
-
-                    temp_son = df_son[[col_son]].copy()
-                    temp_son['val'] = pd.to_numeric(temp_son[col_son], errors='coerce')
-                    temp_son = temp_son.dropna(subset=['val']).reset_index(drop=True)
-
+                    # 1. Tìm các cột phân loại (Độ dày và Cấp chất lượng)
                     thick_col_ma = next((c for c in df_ma.columns if "厚度" in str(c) or "thickness" in str(c).lower()), None)
                     thick_col_son = next((c for c in df_son.columns if "厚度" in str(c) or "thickness" in str(c).lower()), None)
+                    grade_col_ma = next((c for c in df_ma.columns if "等級" in str(c) or "grade" in str(c).lower()), None)
+                    grade_col_son = next((c for c in df_son.columns if "等級" in str(c) or "grade" in str(c).lower()), None)
+
+                    # 2. Xử lý dữ liệu Mạ (Galvanizing) - Gộp chung trước khi Drop NA để giữ nguyên Index
+                    cols_ma = [col_ma] + ([thick_col_ma] if thick_col_ma else []) + ([grade_col_ma] if grade_col_ma else [])
+                    temp_ma = df_ma[list(set(cols_ma))].copy()
+                    temp_ma['val'] = pd.to_numeric(temp_ma[col_ma], errors='coerce')
+
+                    if thick_col_ma:
+                        temp_ma['Thick_Num'] = pd.to_numeric(temp_ma[thick_col_ma], errors='coerce')
+                        
+                    if grade_col_ma:
+                        # Lọc nghiêm ngặt: Chỉ lấy cuộn có chất lượng từ A-B trở lên để tính limits
+                        temp_ma = temp_ma[temp_ma[grade_col_ma].astype(str).str.upper().str.contains('A|B|PRIME|1|2', na=True)]
+
+                    temp_ma = temp_ma.dropna(subset=['val']).reset_index(drop=True)
+
+                    # 3. Xử lý dữ liệu Sơn (Coating) - Tương tự như Mạ
+                    cols_son = [col_son] + ([thick_col_son] if thick_col_son else []) + ([grade_col_son] if grade_col_son else [])
+                    temp_son = df_son[list(set(cols_son))].copy()
+                    temp_son['val'] = pd.to_numeric(temp_son[col_son], errors='coerce')
+
+                    if thick_col_son:
+                        temp_son['Thick_Num'] = pd.to_numeric(temp_son[thick_col_son], errors='coerce')
+
+                    if grade_col_son:
+                        # Lọc nghiêm ngặt: Chỉ lấy cuộn có chất lượng từ A-B trở lên để tính limits
+                        temp_son = temp_son[temp_son[grade_col_son].astype(str).str.upper().str.contains('A|B|PRIME|1|2', na=True)]
+
+                    temp_son = temp_son.dropna(subset=['val']).reset_index(drop=True)
 
                     groups_to_compare = []
 
                     if thick_col_ma and thick_col_son:
-                        temp_ma['Thick_Num'] = pd.to_numeric(df_ma[thick_col_ma], errors='coerce')
-                        temp_son['Thick_Num'] = pd.to_numeric(df_son[thick_col_son], errors='coerce')
-                        
                         ma_g1 = temp_ma[temp_ma['Thick_Num'] <= 0.60].copy()
                         son_g1 = temp_son[temp_son['Thick_Num'] <= 0.60].copy()
                         if not ma_g1.empty and not son_g1.empty:
@@ -198,7 +217,7 @@ if uploaded_files:
                         vals_ma_full = group_ma['val']
                         vals_son_full = group_son['val']
 
-                        # Chuyển xử lý tính toán ra bên ngoài để tránh lưu trữ biến thừa
+                        # Tính giá trị trên lý thuyết (Theoretical values)
                         mean_ma = vals_ma_full.mean()
                         mean_son = vals_son_full.mean()
                         
