@@ -352,6 +352,20 @@ if uploaded_files:
                 
                 st.info(f"📂 Analyzing File: **{fname}** | Auto-detected: **{actual_line_type}**")
                 
+                # ==========================================
+                # XỬ LÝ VÀ HIỂN THỊ THỜI GIAN DỮ LIỆU
+                # ==========================================
+                time_col = next((c for c in df_raw.columns if "日期" in str(c) or "date" in str(c).lower() or "time" in str(c).lower()), None)
+                date_range_str = "Unknown Period"
+                if time_col:
+                    temp_dates = pd.to_datetime(df_raw[time_col], errors='coerce').dropna()
+                    if not temp_dates.empty:
+                        date_range_str = f"{temp_dates.min().strftime('%Y-%m-%d')} to {temp_dates.max().strftime('%Y-%m-%d')}"
+                
+                st.markdown(f"**📅 Data Period:** `{date_range_str}`")
+                st.markdown("---")
+                # ==========================================
+                
                 if "用途碼" in df.columns:
                     usage_list = sorted(df["用途碼"].dropna().unique().tolist())
                     selected_usages = st.multiselect(f"Filter Usage Code ({line_label}):", options=usage_list, default=usage_list, key=f"usage_{fname}_{view_mode}")
