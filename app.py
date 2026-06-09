@@ -711,7 +711,7 @@ if uploaded_files:
                                         c_limit = c if is_multi_group else "#FF0000"
                                         
                                         group_mean = group[data_col].mean()
-                                        register_vline(group_mean, c_mean, "-", "Theo. Value" if color_idx==0 else None)
+                                        register_vline(group_mean, c_mean, "-", "Mean Value" if color_idx==0 else None)
                                         if lsl != -1: register_vline(lsl, c_limit, "--", "Int LSL" if color_idx==0 else None)
                                         if usl != -1: register_vline(usl, c_limit, "--", "Int USL" if color_idx==0 else None)
                                         color_idx += 1
