@@ -602,7 +602,7 @@ if uploaded_files:
                                         group_mean = group[data_col].mean()
                                         
                                         ax_t.axhline(group_mean, color=c_mean, linestyle="-", linewidth=2.0, alpha=0.7, label="Group Theo. Value" if color_idx==0 else None)
-                                        add_to_label(group_mean, "Theo. Value", c_mean)
+                                        add_to_label(group_mean, "Mean Value", c_mean)
                                         
                                         if lsl != -1: 
                                             ax_t.axhline(lsl, color=c_limit, linestyle="--", linewidth=2.0, alpha=1.0)
