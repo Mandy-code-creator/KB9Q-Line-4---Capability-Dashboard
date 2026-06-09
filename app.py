@@ -101,6 +101,23 @@ def export_to_word(figures, titles):
     out_io.seek(0)
     return out_io
 
+# HÀM MỚI: TÌM VÀ LÀM SẠCH DỮ LIỆU ĐỘ DÀY (CHỐNG LỖI)
+def get_clean_thickness(df):
+    thick_col = None
+    # Ưu tiên tìm chính xác các cột liên quan đến độ dày, tránh cột dung sai "公差"
+    for kw in ["訂單厚度", "thickness", "thick", "độ dày", "厚度"]:
+        for c in df.columns:
+            if kw in str(c).lower() and "公差" not in str(c): 
+                thick_col = c
+                break
+        if thick_col: break
+    
+    if thick_col:
+        # Sử dụng RegEx để trích xuất chữ số (vd: "0.6mm" -> 0.6)
+        num_series = pd.to_numeric(df[thick_col].astype(str).str.extract(r'(\d+\.?\d*)')[0], errors='coerce')
+        return thick_col, num_series
+    return None, pd.Series(dtype=float)
+
 # =========================================================================
 # 3. MAIN APP LOGIC & SIDEBAR
 # =========================================================================
@@ -157,8 +174,8 @@ if uploaded_files:
                     col_ma = find_data_col(df_ma, short_key)
                     col_son = find_data_col(df_son, short_key)
 
-                    thick_col_ma = next((c for c in df_ma.columns if any(kw in str(c).lower() for kw in ["厚度", "thickness", "thick", "độ dày"])), None)
-                    thick_col_son = next((c for c in df_son.columns if any(kw in str(c).lower() for kw in ["厚度", "thickness", "thick", "độ dày"])), None)
+                    thick_col_ma, thick_series_ma = get_clean_thickness(df_ma)
+                    thick_col_son, thick_series_son = get_clean_thickness(df_son)
                     grade_col_ma = next((c for c in df_ma.columns if "等級" in str(c) or "grade" in str(c).lower()), None)
                     grade_col_son = next((c for c in df_son.columns if "等級" in str(c) or "grade" in str(c).lower()), None)
 
@@ -167,7 +184,7 @@ if uploaded_files:
                     temp_ma['val'] = pd.to_numeric(temp_ma[col_ma], errors='coerce')
 
                     if thick_col_ma:
-                        temp_ma['Thick_Num'] = pd.to_numeric(temp_ma[thick_col_ma], errors='coerce')
+                        temp_ma['Thick_Num'] = thick_series_ma
                         
                     if grade_col_ma:
                         temp_ma = temp_ma[temp_ma[grade_col_ma].astype(str).str.upper().str.contains('A|B|PRIME|1|2', na=True)]
@@ -179,7 +196,7 @@ if uploaded_files:
                     temp_son['val'] = pd.to_numeric(temp_son[col_son], errors='coerce')
 
                     if thick_col_son:
-                        temp_son['Thick_Num'] = pd.to_numeric(temp_son[thick_col_son], errors='coerce')
+                        temp_son['Thick_Num'] = thick_series_son
 
                     if grade_col_son:
                         temp_son = temp_son[temp_son[grade_col_son].astype(str).str.upper().str.contains('A|B|PRIME|1|2', na=True)]
@@ -200,7 +217,7 @@ if uploaded_files:
                             groups_to_compare.append(("Thickness > 0.60", ma_g2, son_g2))
                     
                     if not groups_to_compare:
-                        st.info(f"ℹ️ Thickness data not found for {selected_label}. Switching to global analysis.")
+                        st.info(f"ℹ️ Configured thickness groups not found for {selected_label}. Switching to global analysis.")
                         groups_to_compare.append(("Global Data", temp_ma, temp_son))
 
                     for group_info in groups_to_compare:
@@ -359,12 +376,11 @@ if uploaded_files:
                     selected_usages = st.multiselect(f"Filter Usage Code ({line_label}):", options=usage_list, default=usage_list, key=f"usage_{fname}_{view_mode}")
                     df = df[df["用途碼"].isin(selected_usages)]
 
-                # --- Thickness Range Filter Logic ---
+                # --- Thickness Range Filter Logic (Updated) ---
                 if view_mode == "Process Analytics":
-                    thick_col_filter = next((c for c in df.columns if any(kw in str(c).lower() for kw in ["厚度", "thickness", "thick", "độ dày"])), None)
+                    thick_col_filter, df['Thick_Num_Filter'] = get_clean_thickness(df)
                     
                     if thick_col_filter:
-                        df['Thick_Num_Filter'] = pd.to_numeric(df[thick_col_filter], errors='coerce')
                         valid_thick = df['Thick_Num_Filter'].dropna()
                         
                         if not valid_thick.empty:
@@ -375,7 +391,7 @@ if uploaded_files:
                                 c_f1, c_f2 = st.columns([1, 2]) 
                                 with c_f1:
                                     selected_thick = st.slider(
-                                        f"🎚️ Thickness Range ({line_label}):", 
+                                        f"🎚️ Thickness Range ({line_label}) - {thick_col_filter}:", 
                                         min_value=min_t, 
                                         max_value=max_t, 
                                         value=(min_t, max_t), 
@@ -386,9 +402,9 @@ if uploaded_files:
                             else:
                                 st.info(f"ℹ️ All coils in this dataset have the exact same thickness ({min_t}). Thickness filter is disabled.")
                         else:
-                            st.warning("⚠️ Valid thickness data could not be parsed.")
+                            st.warning(f"⚠️ Valid numerical data could not be parsed from column: '{thick_col_filter}'.")
                     else:
-                        st.warning("⚠️ 'Thickness' column not found in this file. Thickness filter is disabled.")
+                        st.warning("⚠️ 'Thickness' column not found in this file (e.g. 訂單厚度). Thickness filter is disabled.")
                 # ------------------------------------
 
                 available = [k for k, v in metrics_map.items() if find_data_col(df, v)]
@@ -413,11 +429,11 @@ if uploaded_files:
                             
                             if temp_df.empty: continue
                             
-                            thick_col = next((c for c in df.columns if any(kw in str(c).lower() for kw in ["厚度", "thickness", "thick", "độ dày"])), None)
+                            thick_col, thick_series = get_clean_thickness(df)
                             
                             groups = []
                             if thick_col:
-                                temp_df['Thick_Num'] = pd.to_numeric(df[thick_col], errors='coerce')
+                                temp_df['Thick_Num'] = thick_series
                                 g1 = temp_df[temp_df['Thick_Num'] <= 0.60]
                                 g2 = temp_df[temp_df['Thick_Num'] > 0.60]
                                 g_nan = temp_df[temp_df['Thick_Num'].isna()]
@@ -732,14 +748,14 @@ if uploaded_files:
                             # SUB-VIEW: SPC CONTROL CHARTS (I-MR)
                             # ---------------------------------------------------------
                             elif view_mode == "SPC Control Charts (I-MR)":
-                                thick_col = next((c for c in df.columns if any(kw in str(c).lower() for kw in ["厚度", "thickness", "thick", "độ dày"])), None)
+                                thick_col, thick_series = get_clean_thickness(df)
                                 
                                 spc_groups = []
                                 temp_spc_df = df[[data_col]].copy()
                                 temp_spc_df[data_col] = pd.to_numeric(temp_spc_df[data_col], errors='coerce')
                                 
                                 if thick_col:
-                                    temp_spc_df['Thick_Num'] = pd.to_numeric(df[thick_col], errors='coerce')
+                                    temp_spc_df['Thick_Num'] = thick_series
                                     temp_spc_df = temp_spc_df.dropna(subset=[data_col]).reset_index(drop=True)
                                     
                                     g1 = temp_spc_df[temp_spc_df['Thick_Num'] <= 0.60]
