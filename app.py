@@ -11,9 +11,9 @@ from docx.shared import Inches
 import matplotlib.lines as mlines
 import gc 
 
-# ==========================================
+# =========================================================================
 # 1. PAGE CONFIGURATION & FONTS
-# ==========================================
+# =========================================================================
 st.set_page_config(page_title="Line 4 Quality Analytics", layout="wide")
 
 plt.rcParams['font.sans-serif'] = ['Arial', 'Helvetica', 'sans-serif']
@@ -33,9 +33,9 @@ plt.rcParams.update({
 THEME_COLORS = ['#0055FF', '#FF6600', '#00AA00', '#9900FF', '#CC0055', '#009999']
 MUTED_COLORS = ['#4A90E2', '#E67E22', '#27AE60', '#9B59B6', '#34495E', '#F1C40F']
 
-# ==========================================
+# =========================================================================
 # 2. UTILITY FUNCTIONS
-# ==========================================
+# =========================================================================
 @st.cache_data(max_entries=3) 
 def load_and_clean_data(file):
     df = pd.read_csv(file) if file.name.endswith('.csv') else pd.read_excel(file)
@@ -101,9 +101,9 @@ def export_to_word(figures, titles):
     out_io.seek(0)
     return out_io
 
-# ==========================================
-# 3. MAIN APP LOGIC
-# ==========================================
+# =========================================================================
+# 3. MAIN APP LOGIC & SIDEBAR
+# =========================================================================
 st.sidebar.header("📂 DATA SOURCE")
 uploaded_files = st.sidebar.file_uploader("Upload Excel/CSV Reports", type=["xlsx", "csv", "xls"], accept_multiple_files=True)
 
@@ -126,6 +126,9 @@ if uploaded_files:
         "Cross-Line Comparison 🔀"
     ])
 
+    # =========================================================================
+    # [VIEW MODE]: CROSS-LINE COMPARISON
+    # =========================================================================
     if view_mode == "Cross-Line Comparison 🔀":
         st.title("🔀 Statistical Process Shift & Limits Recommendation")
         
@@ -154,8 +157,8 @@ if uploaded_files:
                     col_ma = find_data_col(df_ma, short_key)
                     col_son = find_data_col(df_son, short_key)
 
-                    thick_col_ma = next((c for c in df_ma.columns if "厚度" in str(c) or "thickness" in str(c).lower()), None)
-                    thick_col_son = next((c for c in df_son.columns if "厚度" in str(c) or "thickness" in str(c).lower()), None)
+                    thick_col_ma = next((c for c in df_ma.columns if any(kw in str(c).lower() for kw in ["厚度", "thickness", "thick", "độ dày"])), None)
+                    thick_col_son = next((c for c in df_son.columns if any(kw in str(c).lower() for kw in ["厚度", "thickness", "thick", "độ dày"])), None)
                     grade_col_ma = next((c for c in df_ma.columns if "等級" in str(c) or "grade" in str(c).lower()), None)
                     grade_col_son = next((c for c in df_son.columns if "等級" in str(c) or "grade" in str(c).lower()), None)
 
@@ -297,7 +300,7 @@ if uploaded_files:
                         st.markdown("<br>", unsafe_allow_html=True)
 
     # =========================================================================
-    # MODE 2: TABBED ANALYSIS FOR INDIVIDUAL LINES
+    # [VIEW MODE]: TABBED ANALYSIS SETUP (GLOBAL DATA PREP)
     # =========================================================================
     else:
         st.title(f"📊 {view_mode}")
@@ -330,8 +333,8 @@ if uploaded_files:
                 for k, v in metrics_map.items():
                     col = find_data_col(df_raw, v)
                     if col: necessary_cols.append(col)
-                for kw in ["管制", "規格", "要求", "厚度", "thickness", "用途碼"]:
-                    cols = [c for c in df_raw.columns if kw in str(c)]
+                for kw in ["管制", "規格", "要求", "厚度", "thickness", "用途碼", "thick", "độ dày"]:
+                    cols = [c for c in df_raw.columns if kw in str(c).lower()]
                     necessary_cols.extend(cols)
                 
                 df = df_raw[list(set(necessary_cols))].copy() if necessary_cols else df_raw.copy()
@@ -356,11 +359,10 @@ if uploaded_files:
                     selected_usages = st.multiselect(f"Filter Usage Code ({line_label}):", options=usage_list, default=usage_list, key=f"usage_{fname}_{view_mode}")
                     df = df[df["用途碼"].isin(selected_usages)]
 
-                # ==========================================
-                # THICKNESS FILTER 
-                # ==========================================
+                # --- Thickness Range Filter Logic ---
                 if view_mode == "Process Analytics":
-                    thick_col_filter = next((c for c in df.columns if "厚度" in str(c) or "thickness" in str(c).lower()), None)
+                    thick_col_filter = next((c for c in df.columns if any(kw in str(c).lower() for kw in ["厚度", "thickness", "thick", "độ dày"])), None)
+                    
                     if thick_col_filter:
                         df['Thick_Num_Filter'] = pd.to_numeric(df[thick_col_filter], errors='coerce')
                         valid_thick = df['Thick_Num_Filter'].dropna()
@@ -373,7 +375,7 @@ if uploaded_files:
                                 c_f1, c_f2 = st.columns([1, 2]) 
                                 with c_f1:
                                     selected_thick = st.slider(
-                                        f"Thickness Range ({line_label}):", 
+                                        f"🎚️ Thickness Range ({line_label}):", 
                                         min_value=min_t, 
                                         max_value=max_t, 
                                         value=(min_t, max_t), 
@@ -381,13 +383,22 @@ if uploaded_files:
                                         key=f"thick_slider_{fname}"
                                     )
                                 df = df[(df['Thick_Num_Filter'] >= selected_thick[0]) & (df['Thick_Num_Filter'] <= selected_thick[1])]
-                # ==========================================
+                            else:
+                                st.info(f"ℹ️ All coils in this dataset have the exact same thickness ({min_t}). Thickness filter is disabled.")
+                        else:
+                            st.warning("⚠️ Valid thickness data could not be parsed.")
+                    else:
+                        st.warning("⚠️ 'Thickness' column not found in this file. Thickness filter is disabled.")
+                # ------------------------------------
 
                 available = [k for k, v in metrics_map.items() if find_data_col(df, v)]
                 if not available:
                     st.warning(f"⚠️ Mechanical property data column not found in this file.")
                     continue
 
+                # =========================================================================
+                # [VIEW MODE]: EXECUTIVE SUMMARY
+                # =========================================================================
                 if view_mode == "Executive Summary":
                     summary_data = []
                     for selected_label in available:
@@ -402,7 +413,7 @@ if uploaded_files:
                             
                             if temp_df.empty: continue
                             
-                            thick_col = next((c for c in df.columns if "厚度" in str(c) or "thickness" in str(c).lower()), None)
+                            thick_col = next((c for c in df.columns if any(kw in str(c).lower() for kw in ["厚度", "thickness", "thick", "độ dày"])), None)
                             
                             groups = []
                             if thick_col:
@@ -469,6 +480,9 @@ if uploaded_files:
                     if summary_data:
                         st.dataframe(pd.DataFrame(summary_data), hide_index=True, use_container_width=True)
 
+                # =========================================================================
+                # [VIEW MODE]: PROCESS ANALYTICS & SPC CONTROL CHARTS
+                # =========================================================================
                 else:
                     for selected_label in available:
                         st.markdown(f"<hr><h3 style='color: #2E86C1;'>🔹 Parameter: {selected_label}</h3>", unsafe_allow_html=True)
@@ -484,6 +498,9 @@ if uploaded_files:
                             plot_data = plot_df[data_col]
                             n = len(plot_data)
 
+                            # ---------------------------------------------------------
+                            # SUB-VIEW: PROCESS ANALYTICS (TREND & DIST)
+                            # ---------------------------------------------------------
                             if view_mode == "Process Analytics":
                                 int_lsl_series = get_limit_series(df, zh_key, "min", "管制", len(df)).loc[temp_df[data_col].notna()].reset_index(drop=True)
                                 int_usl_series = get_limit_series(df, zh_key, "max", "管制", len(df)).loc[temp_df[data_col].notna()].reset_index(drop=True)
@@ -711,8 +728,11 @@ if uploaded_files:
                                     st.download_button(label=f"📥 Download Dist Chart ({selected_label})", data=buf_d, file_name=f"Dist_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_dist_{fname}_{selected_label}")
                                     plt.close(fig_d)
                                     
+                            # ---------------------------------------------------------
+                            # SUB-VIEW: SPC CONTROL CHARTS (I-MR)
+                            # ---------------------------------------------------------
                             elif view_mode == "SPC Control Charts (I-MR)":
-                                thick_col = next((c for c in df.columns if "厚度" in str(c) or "thickness" in str(c).lower()), None)
+                                thick_col = next((c for c in df.columns if any(kw in str(c).lower() for kw in ["厚度", "thickness", "thick", "độ dày"])), None)
                                 
                                 spc_groups = []
                                 temp_spc_df = df[[data_col]].copy()
@@ -748,7 +768,7 @@ if uploaded_files:
                                         g_iqr = g_q3 - g_q1
                                         
                                         spc_stats.append({
-                                            "Group": g_name,
+                                            "Category": g_name,
                                             "N": g_n,
                                             "Theo. Value": format_num(g_mu),
                                             "Sigma": format_num(g_sig),
@@ -796,9 +816,9 @@ if uploaded_files:
                                 ax_i.set_title(f"I-Chart: Dynamic Control Limits ({selected_label})", pad=20)
                                 
                                 custom_lines = [
-                                    mllines.Line2D([], [], color='black', linestyle='-', lw=2.0, alpha=0.8, label='Group Theo. Value'),
-                                    mllines.Line2D([], [], color='black', linestyle='--', lw=1.8, alpha=0.8, label=f'UCL/LCL ({k_std}σ)'),
-                                    mllines.Line2D([], [], color='black', linestyle=':', lw=2.5, alpha=0.8, label=f'UCL/LCL (IQR)')
+                                    mlines.Line2D([], [], color='black', linestyle='-', lw=2.0, alpha=0.8, label='Group Theo. Value'),
+                                    mlines.Line2D([], [], color='black', linestyle='--', lw=1.8, alpha=0.8, label=f'UCL/LCL ({k_std}σ)'),
+                                    mlines.Line2D([], [], color='black', linestyle=':', lw=2.5, alpha=0.8, label=f'UCL/LCL (IQR)')
                                 ]
                                 
                                 handles, labels = ax_i.get_legend_handles_labels()
