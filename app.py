@@ -763,10 +763,7 @@ if uploaded_files:
                                     st.download_button(label=f"📥 Download Dist Chart ({selected_label})", data=buf_d, file_name=f"Dist_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_dist_{fname}_{selected_label}")
                                     plt.close(fig_d)
                                     
-                            # ---------------------------------------------------------
-                            # ---------------------------------------------------------
-                            # ---------------------------------------------------------
-                            # ---------------------------------------------------------
+                            # ---------------------------------------------------------                            
                             # ---------------------------------------------------------
                             # SUB-VIEW: SPC CONTROL CHARTS (I-MR)
                             # ---------------------------------------------------------
@@ -796,8 +793,8 @@ if uploaded_files:
                                             "N": g_n,
                                             "Theo. Value": format_num(g_mu),
                                             "Sigma": format_num(g_sig),
-                                            f"UCL ({k_std}σ)": format_num(g_mu + k_std*g_sig),
-                                            f"LCL ({k_std}σ)": format_num(g_mu - k_std*g_sig),
+                                            f"Mill Range Upper ({k_std}σ)": format_num(g_mu + k_std*g_sig),
+                                            f"Mill Range Lower ({k_std}σ)": format_num(g_mu - k_std*g_sig),
                                             "IQR": format_num(g_iqr),
                                             "UCL (IQR)": format_num(g_q3 + k_iqr*g_iqr),
                                             "LCL (IQR)": format_num(g_q1 - k_iqr*g_iqr)
