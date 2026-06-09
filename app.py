@@ -661,9 +661,10 @@ if uploaded_files:
                                     st.download_button(label=f"📥 Download Trend Chart ({selected_label})", data=buf_t, file_name=f"Trend_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_trend_{fname}_{selected_label}")
                                     plt.close(fig_t)
 
-                                # Create figure with tighter layout
-                                    fig_d, ax_d = plt.subplots(figsize=(10, 5))
-                                    plt.subplots_adjust(top=0.85, bottom=0.15) # Tighten the top space
+                                with tab_dist:
+                                    # Create figure with more space on top for labels
+                                    fig_d, ax_d = plt.subplots(figsize=(10, 6))
+                                    plt.subplots_adjust(top=0.8, bottom=0.15) 
                                     
                                     # Plot histograms
                                     hist_data, hist_labels = [], []
@@ -686,35 +687,43 @@ if uploaded_files:
                                     ax_pdf.plot(xs, norm.pdf(xs, safe_mu, safe_sigma) * n * bin_w, color="#111111", lw=1.5, label="Normal Fit")
                                     ax_pdf.set_yticks([])
                                     
-                                    # Optimized labeling logic (Prevents overlapping)
+                                    # Dynamic Y-limit to provide space for labels
+                                    ax_d.set_ylim(0, ax_d.get_ylim()[1] * 1.4) 
+                                    
+                                    # Labeling logic
                                     lines_to_draw.sort(key=lambda x: x['val'])
                                     trans = ax_d.get_xaxis_transform()
                                     
-                                    # Track positions to prevent overlap
+                                    # Track labels to prevent overlap
                                     positions = [] 
                                     for item in lines_to_draw:
                                         val = item['val']
                                         ax_d.axvline(val, color=item['color'], linestyle=item['ls'], linewidth=2)
                                         
-                                        # Calculate Y position: start above chart (1.02), increment if collision
-                                        y_pos = 1.02
+                                        # Calculate Y position relative to data max
+                                        y_top = ax_d.get_ylim()[1]
+                                        y_pos = y_top * 0.85
+                                        
+                                        # Push labels up if they overlap
                                         for prev_val, prev_y in positions:
-                                            if abs(val - prev_val) < (x_range * 0.08): # If too close horizontally
-                                                y_pos = prev_y + 0.08 # Push higher
+                                            if abs(val - prev_val) < (x_range * 0.12):
+                                                y_pos = prev_y + (y_top * 0.1)
                                         
                                         positions.append((val, y_pos))
                                         
                                         bbox = dict(boxstyle="round,pad=0.3", fc="white", ec=item['color'], alpha=0.9, lw=1)
-                                        ax_d.text(val, y_pos, f"{val:.1f}", color=item['color'], ha='center', va='bottom', 
+                                        ax_d.text(val, y_pos, f"{val:.1f}", color=item['color'], ha='center', va='center', 
                                                   transform=trans, fontweight='bold', fontsize=9, bbox=bbox)
                                                   
-                                    # Set title closer to chart
-                                    ax_d.set_title(f"{selected_label} Distribution (N={n})", pad=20, fontweight='bold')
-                                    
-                                    # Legend adjustment
+                                    ax_d.set_title(f"{selected_label} Distribution (N={n})", pad=10, fontweight='bold')
                                     ax_d.legend(loc="upper left", bbox_to_anchor=(1.05, 1), fontsize=8)
                                     apply_full_border(ax_d)
                                     st.pyplot(fig_d)
+                                    
+                                    # Export
+                                    buf_d = export_to_word([fig_d], [f"Distribution Analysis - {selected_label}"])
+                                    st.download_button(label=f"📥 Download Dist Chart ({selected_label})", data=buf_d, file_name=f"Dist_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_dist_{fname}_{selected_label}")
+                                    plt.close(fig_d)
                                     
                                     # Export
                                     buf_d = export_to_word([fig_d], [f"Distribution Analysis - {selected_label}"])
