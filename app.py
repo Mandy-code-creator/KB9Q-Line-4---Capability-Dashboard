@@ -563,7 +563,10 @@ if uploaded_files:
                                     fig_t, ax_t = plt.subplots(figsize=(11, 5.5)) 
                                     x_coords = np.arange(1, n+1)
 
-                                    if not int_lsl_series.isna().all() and not int_usl_series.isna().all():
+                                    if is_coating_line:
+                                        lower_bound = pd.Series([safe_mu - 3 * safe_sigma] * n)
+                                        upper_bound = pd.Series([safe_mu + 3 * safe_sigma] * n)
+                                    elif not int_lsl_series.isna().all() and not int_usl_series.isna().all():
                                         lower_bound = int_lsl_series.ffill().bfill()
                                         upper_bound = int_usl_series.ffill().bfill()
                                     else:
@@ -592,25 +595,31 @@ if uploaded_files:
                                     color_idx = 0
                                     for (lsl, usl), group in groups:
                                         c = THEME_COLORS[color_idx % len(THEME_COLORS)]
-                                        
                                         c_mean = c if is_multi_group else "#0055FF"
                                         c_limit = c if is_multi_group else "#FF0000"
                                         
+                                        mask = temp_plot_df.index.isin(group.index)
+                                        spec_txt = format_spec(lsl, usl)
                                         group_mean = group[data_col].mean()
-                                        register_vline(group_mean, c_mean, "-", "Mean Value" if color_idx==0 else None)
+                                        
+                                        ax_t.axhline(group_mean, color=c_mean, linestyle="-", linewidth=2.0, alpha=0.7, label="Mean Value" if color_idx==0 else None)
+                                        add_to_label(group_mean, "Mean Value", c_mean)
                                         
                                         if not is_coating_line:
-                                            # Nếu KHÔNG phải chuyền mạ: Vẽ đường Int LSL / Int USL bình thường
-                                            if lsl != -1: register_vline(lsl, c_limit, "--", "Int LSL" if color_idx==0 else None)
-                                            if usl != -1: register_vline(usl, c_limit, "--", "Int USL" if color_idx==0 else None)
+                                            if lsl != -1: 
+                                                ax_t.axhline(lsl, color=c_limit, linestyle="--", linewidth=2.0, alpha=1.0)
+                                                add_to_label(lsl, "Int LSL", c_limit)
+                                            if usl != -1: 
+                                                ax_t.axhline(usl, color=c_limit, linestyle="--", linewidth=2.0, alpha=1.0)
+                                                add_to_label(usl, "Int USL", c_limit)
                                         else:
-                                            # Nếu LÀ chuyền mạ: Ẩn Int LSL/USL, vẽ đường 3-Sigma (Mean ± 3*Sigma)
-                                            lcl_3sigma = group_mean - 3 * safe_sigma
-                                            ucl_3sigma = group_mean + 3 * safe_sigma
-                                            # Dùng nét đứt gạch (-.) để phân biệt với nét đứt (--) của giới hạn thông thường
-                                            register_vline(lcl_3sigma, c_limit, "-.", "-3 Sigma" if color_idx==0 else None)
-                                            register_vline(ucl_3sigma, c_limit, "-.", "+3 Sigma" if color_idx==0 else None)
+                                            lcl_3s, ucl_3s = group_mean - 3 * safe_sigma, group_mean + 3 * safe_sigma
+                                            ax_t.axhline(lcl_3s, color=c_limit, linestyle="-.", linewidth=2.0, alpha=1.0)
+                                            add_to_label(lcl_3s, "-3 Sigma", c_limit)
+                                            ax_t.axhline(ucl_3s, color=c_limit, linestyle="-.", linewidth=2.0, alpha=1.0)
+                                            add_to_label(ucl_3s, "+3 Sigma", c_limit)
                                             
+                                        ax_t.scatter(x_coords[mask], plot_data[mask], color=c, s=40, edgecolor="black", linewidth=1.0, zorder=4, label=f"Data ({spec_txt})")
                                         color_idx += 1
 
                                     mask_out = (plot_data < lower_bound) | (plot_data > upper_bound)
@@ -620,8 +629,7 @@ if uploaded_files:
                                     valid_y = plot_data.dropna()
                                     ymin, ymax = valid_y.min(), valid_y.max()
                                     for val in label_dict.keys():
-                                        ymin = min(ymin, val)
-                                        ymax = max(ymax, val)
+                                        ymin, ymax = min(ymin, val), max(ymax, val)
                                             
                                     y_range = ymax - ymin if ymax > ymin else 10
                                     ax_t.set_ylim(ymin - y_range*0.12, ymax + y_range*0.12)
@@ -637,17 +645,14 @@ if uploaded_files:
                                         main_color = items[0]['color']
                                         
                                         y_draw = val
-                                        if y_draw - last_y < min_y_dist:
-                                            y_draw = last_y + min_y_dist
+                                        if y_draw - last_y < min_y_dist: y_draw = last_y + min_y_dist
                                             
                                         ax_t.plot([n, n + (n*0.02)], [val, y_draw], color="black", linestyle="-", lw=1.0, alpha=0.4)
                                         bbox = dict(boxstyle="round,pad=0.3", fc="#FFFFFF", ec=main_color, alpha=0.95, lw=1.5)
                                         ax_t.text(n + (n*0.025), y_draw, f"{names_str}: {val:.1f}", color=main_color, va='center', ha='left', fontsize=9, bbox=bbox, fontweight='bold')
                                         last_y = y_draw
 
-                                    ax_t.set_xlabel("Coil Sequence")
-                                    ax_t.set_ylabel(f"{selected_label} Value")
-                                    ax_t.set_title(f"{selected_label} Trend Analysis (N={n})", pad=20)
+                                    ax_t.set_xlabel("Coil Sequence"); ax_t.set_ylabel(f"{selected_label} Value"); ax_t.set_title(f"{selected_label} Trend Analysis (N={n})", pad=20)
                                     
                                     handles, labels = ax_t.get_legend_handles_labels()
                                     by_label = dict(zip(labels, handles))
@@ -655,7 +660,6 @@ if uploaded_files:
                                     ax_t.legend(clean_dict.values(), clean_dict.keys(), loc="upper center", bbox_to_anchor=(0.5, -0.15), ncol=4, fontsize=9)
                                     
                                     apply_full_border(ax_t); plt.tight_layout(); st.pyplot(fig_t)
-                                    
                                     buf_t = export_to_word([fig_t], [f"Trend Analysis - {selected_label}"])
                                     st.download_button(label=f"📥 Download Trend Chart ({selected_label})", data=buf_t, file_name=f"Trend_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_trend_{fname}_{selected_label}")
                                     plt.close(fig_t)
@@ -667,26 +671,20 @@ if uploaded_files:
                                     color_idx = 0
                                     for (lsl, usl), group in groups:
                                         hist_data.append(group[data_col].values)
-                                        spec_txt = format_spec(lsl, usl)
-                                        hist_labels.append(f"Data ({spec_txt})")
+                                        hist_labels.append(f"Data ({format_spec(lsl, usl)})")
                                         color_idx += 1
                                         
-                                    if is_multi_group:
-                                        ax_d.hist(hist_data, bins=20, stacked=True, density=False, alpha=0.8, edgecolor="black", label=hist_labels, color=THEME_COLORS[:len(hist_data)])
-                                    else:
-                                        ax_d.hist(plot_data, bins=20, density=False, alpha=0.6, color="#0055FF", edgecolor="black", label="Data")
+                                    if is_multi_group: ax_d.hist(hist_data, bins=20, stacked=True, density=False, alpha=0.8, edgecolor="black", label=hist_labels, color=THEME_COLORS[:len(hist_data)])
+                                    else: ax_d.hist(plot_data, bins=20, density=False, alpha=0.6, color="#0055FF", edgecolor="black", label="Data")
 
                                     ax_d.yaxis.set_major_locator(MaxNLocator(integer=True))
-                                    ax_d.set_xlabel(f"{selected_label} Value")
-                                    ax_d.set_ylabel("Coil Count")
+                                    ax_d.set_xlabel(f"{selected_label} Value"); ax_d.set_ylabel("Coil Count")
                                     
                                     ax_pdf = ax_d.twinx()
                                     x_min_fit, x_max_fit = min(plot_data.min(), safe_mu - 4*safe_sigma), max(plot_data.max(), safe_mu + 4*safe_sigma)
                                     xs = np.linspace(x_min_fit, x_max_fit, 500)
-                                    
                                     bin_w = (plot_data.max() - plot_data.min()) / 20 if plot_data.max() > plot_data.min() else 1
-                                    y_vals = norm.pdf(xs, safe_mu, safe_sigma) * n * bin_w
-                                    ax_pdf.plot(xs, y_vals, color="#111111", lw=1.5, label="Normal Fit")
+                                    ax_pdf.plot(xs, norm.pdf(xs, safe_mu, safe_sigma) * n * bin_w, color="#111111", lw=1.5, label="Normal Fit")
                                     ax_pdf.set_yticks([])
                                     
                                     lines_to_draw = []
@@ -696,41 +694,38 @@ if uploaded_files:
 
                                     def register_multiple(limit_series, color, ls, base_label):
                                         if limit_series is not None and not limit_series.isna().all():
-                                            unique_vals = limit_series.dropna().unique()
-                                            unique_vals = [v for v in unique_vals if v > 0]
+                                            unique_vals = [v for v in limit_series.dropna().unique() if v > 0]
                                             for i, val in enumerate(unique_vals):
-                                                label = base_label if i == 0 else None
-                                                register_vline(val, color, ls, label)
+                                                register_vline(val, color, ls, base_label if i == 0 else None)
 
                                     color_idx = 0
                                     for (lsl, usl), group in groups:
                                         c = THEME_COLORS[color_idx % len(THEME_COLORS)]
-                                        
                                         c_mean = c if is_multi_group else "#0055FF"
                                         c_limit = c if is_multi_group else "#FF0000"
                                         
                                         group_mean = group[data_col].mean()
                                         register_vline(group_mean, c_mean, "-", "Mean Value" if color_idx==0 else None)
                                         
-                                        # ĐÃ SỬA: Thêm điều kiện ẩn Int LSL/USL nếu là chuyền mạ (is_coating_line)
                                         if not is_coating_line:
                                             if lsl != -1: register_vline(lsl, c_limit, "--", "Int LSL" if color_idx==0 else None)
                                             if usl != -1: register_vline(usl, c_limit, "--", "Int USL" if color_idx==0 else None)
-                                            
+                                        else:
+                                            lcl_3s, ucl_3s = group_mean - 3 * safe_sigma, group_mean + 3 * safe_sigma
+                                            register_vline(lcl_3s, c_limit, "-.", "-3 Sigma" if color_idx==0 else None)
+                                            register_vline(ucl_3s, c_limit, "-.", "+3 Sigma" if color_idx==0 else None)
                                         color_idx += 1
 
                                     register_multiple(cust_lsl_series, "#00AA00", "-", "Cust LSL")
                                     register_multiple(cust_usl_series, "#00AA00", "-", "Cust USL")
 
                                     lines_to_draw.sort(key=lambda x: x['val'])
-                                    x_range = x_max_fit - x_min_fit
-                                    min_dist = x_range * 0.09  
+                                    min_dist = (x_max_fit - x_min_fit) * 0.09  
                                     levels_last_x = [-np.inf] * 6  
                                     trans = ax_d.get_xaxis_transform()
                                     
                                     for item in lines_to_draw:
-                                        val = item['val']
-                                        c = item['color']
+                                        val, c = item['val'], item['color']
                                         ax_d.axvline(val, color=c, linestyle=item['ls'], linewidth=2.5, label=item['label'])
                                         
                                         assigned_level = 0
@@ -740,16 +735,13 @@ if uploaded_files:
                                                 levels_last_x[i] = val
                                                 break
                                         else:
-                                            assigned_level = 5
-                                            levels_last_x[5] = val
+                                            assigned_level, levels_last_x[3] = 3, val
                                         
-                                        y_pos = 1.02 + (assigned_level * 0.08)
+                                        y_pos = 1.02 + (assigned_level * 0.05)
                                         bbox_props = dict(boxstyle="round,pad=0.2", fc="white", ec=c, alpha=0.9, lw=1.5)
-                                        
-                                        ax_d.text(val, y_pos, f"{val:.1f}", color=c, ha='center', va='bottom', 
-                                                transform=trans, fontweight='bold', fontsize=10, bbox=bbox_props)
+                                        ax_d.text(val, y_pos, f"{val:.1f}", color=c, ha='center', va='bottom', transform=trans, fontweight='bold', fontsize=10, bbox=bbox_props)
                                     
-                                    ax_d.set_title(f"{selected_label} Distribution (N={n})", pad=110) 
+                                    ax_d.set_title(f"{selected_label} Distribution (N={n})", pad=35, fontweight="bold")  
                                     
                                     handles, labels = ax_d.get_legend_handles_labels()
                                     handles_pdf, labels_pdf = ax_pdf.get_legend_handles_labels()
@@ -757,8 +749,7 @@ if uploaded_files:
                                     clean_dict = {k: v for k, v in by_label.items() if k is not None and k != ''}
                                     
                                     ax_d.legend(clean_dict.values(), clean_dict.keys(), loc="upper left", bbox_to_anchor=(1, 1))
-                                    apply_full_border(ax_d)
-                                    plt.tight_layout(rect=[0, 0, 1, 0.9]) 
+                                    apply_full_border(ax_d); plt.tight_layout(rect=[0, 0, 1, 0.9]) 
                                     st.pyplot(fig_d)
                                     
                                     buf_d = export_to_word([fig_d], [f"Distribution Analysis - {selected_label}"])
