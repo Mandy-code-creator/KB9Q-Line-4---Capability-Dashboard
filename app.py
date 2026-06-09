@@ -765,6 +765,7 @@ if uploaded_files:
                                     
                             # ---------------------------------------------------------
                             # ---------------------------------------------------------
+                            # ---------------------------------------------------------
                             # SUB-VIEW: SPC CONTROL CHARTS (I-MR)
                             # ---------------------------------------------------------
                             elif view_mode == "SPC Control Charts (I-MR)":
@@ -779,7 +780,7 @@ if uploaded_files:
                                     temp_spc_df = temp_spc_df.dropna(subset=[data_col]).reset_index(drop=True)
                                     
                                     # ==========================================
-                                    # THICKNESS FILTER FOR SPC CHART
+                                    # THÊM THANH TRƯỢT LỌC ĐỘ DÀY (CHỈ CHO VIEW SPC)
                                     # ==========================================
                                     valid_thick = temp_spc_df['Thick_Num'].dropna()
                                     if not valid_thick.empty:
@@ -797,7 +798,7 @@ if uploaded_files:
                                                     step=0.01, 
                                                     key=f"spc_thick_slider_{fname}_{selected_label}"
                                                 )
-                                            # Lọc dữ liệu theo cuộn (Coil-level logic)
+                                            # Lọc dữ liệu theo cuộn (Coil-level)
                                             temp_spc_df = temp_spc_df[
                                                 (temp_spc_df['Thick_Num'].isna()) | 
                                                 ((temp_spc_df['Thick_Num'] >= selected_thick[0]) & (temp_spc_df['Thick_Num'] <= selected_thick[1]))
@@ -806,7 +807,7 @@ if uploaded_files:
                                             st.info(f"ℹ️ All coils for {selected_label} have the exact same thickness ({min_t}). Filter disabled.")
                                     # ==========================================
                                     
-                                    # Dữ liệu gộp chung làm 1 nhóm sau khi đã đi qua bộ lọc
+                                    # Gộp chung vào 1 luồng dữ liệu duy nhất
                                     if not temp_spc_df.empty:
                                         spc_groups.append(("Filtered Data", temp_spc_df))
                                         
