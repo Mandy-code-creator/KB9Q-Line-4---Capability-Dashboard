@@ -766,6 +766,7 @@ if uploaded_files:
                             # ---------------------------------------------------------
                             # ---------------------------------------------------------
                             # ---------------------------------------------------------
+                            # ---------------------------------------------------------
                             # SUB-VIEW: SPC CONTROL CHARTS (I-MR)
                             # ---------------------------------------------------------
                             elif view_mode == "SPC Control Charts (I-MR)":
@@ -779,33 +780,31 @@ if uploaded_files:
                                     temp_spc_df['Thick_Num'] = thick_series
                                     temp_spc_df = temp_spc_df.dropna(subset=[data_col]).reset_index(drop=True)
                                     
-                                    # ==========================================
-                                    # THÊM THANH TRƯỢT LỌC ĐỘ DÀY (CHỈ CHO VIEW SPC)
-                                    # ==========================================
                                     valid_thick = temp_spc_df['Thick_Num'].dropna()
                                     if not valid_thick.empty:
                                         min_t = float(valid_thick.min())
                                         max_t = float(valid_thick.max())
                                         
                                         if min_t < max_t:
-                                            c_f1, c_f2 = st.columns([1, 2]) 
-                                            with c_f1:
-                                                selected_thick = st.slider(
-                                                    f"🎚️ Thickness Range ({line_label}):", 
-                                                    min_value=min_t, 
-                                                    max_value=max_t, 
-                                                    value=(min_t, max_t), 
-                                                    step=0.01, 
-                                                    key=f"spc_thick_slider_{fname}_{selected_label}"
-                                                )
-                                            # Lọc dữ liệu theo cuộn (Coil-level)
+                                            # MẸO: Chỉ hiển thị thanh trượt 1 lần duy nhất ở biểu đồ đầu tiên (vd: YS)
+                                            if selected_label == available[0]:
+                                                c_f1, c_f2 = st.columns([1, 2]) 
+                                                with c_f1:
+                                                    st.session_state[f"spc_thick_{fname}"] = st.slider(
+                                                        f"🎚️ Thickness Range ({line_label}):", 
+                                                        min_value=min_t, max_value=max_t, value=(min_t, max_t), step=0.01, 
+                                                        key=f"spc_global_thick_slider_{fname}"
+                                                    )
+                                            
+                                            # Lấy giá trị thanh trượt để lọc cho tất cả (YS, TS, EL) ở cấp độ Coil
+                                            current_thick = st.session_state.get(f"spc_thick_{fname}", (min_t, max_t))
                                             temp_spc_df = temp_spc_df[
                                                 (temp_spc_df['Thick_Num'].isna()) | 
-                                                ((temp_spc_df['Thick_Num'] >= selected_thick[0]) & (temp_spc_df['Thick_Num'] <= selected_thick[1]))
+                                                ((temp_spc_df['Thick_Num'] >= current_thick[0]) & (temp_spc_df['Thick_Num'] <= current_thick[1]))
                                             ]
                                         else:
-                                            st.info(f"ℹ️ All coils for {selected_label} have the exact same thickness ({min_t}). Filter disabled.")
-                                    # ==========================================
+                                            if selected_label == available[0]:
+                                                st.info(f"ℹ️ All coils have the exact same thickness ({min_t}). Filter disabled.")
                                     
                                     # Gộp chung vào 1 luồng dữ liệu duy nhất
                                     if not temp_spc_df.empty:
@@ -816,7 +815,8 @@ if uploaded_files:
                                     temp_spc_df = temp_spc_df.dropna(subset=[data_col]).reset_index(drop=True)
                                     if not temp_spc_df.empty:
                                         spc_groups.append(("Global Data", temp_spc_df))
-                                    st.warning("⚠️ 'Thickness' column not found. Calculating globally.")
+                                    if selected_label == available[0]:
+                                        st.warning("⚠️ 'Thickness' column not found. Calculating globally.")
                                     st.markdown(f"#### 📐 Control Parameters Table")
 
                                 spc_stats = []
