@@ -878,7 +878,7 @@ if uploaded_files:
                                 ax_i.set_title(f"I-Chart: Dynamic Control Limits ({selected_label})", pad=20)
                                 
                                 custom_lines = [
-                                    mlines.Line2D([], [], color='black', linestyle='-', lw=2.0, alpha=0.8, label='Theo. Value'),
+                                    mlines.Line2D([], [], color='black', linestyle='-', lw=2.0, alpha=0.8, label='Mean Value'),
                                     mlines.Line2D([], [], color='black', linestyle='--', lw=1.8, alpha=0.8, label=f'UCL/LCL ({k_std}σ)'),
                                     mlines.Line2D([], [], color='black', linestyle=':', lw=2.5, alpha=0.8, label=f'UCL/LCL (IQR)')
                                 ]
