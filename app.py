@@ -534,202 +534,234 @@ if uploaded_files:
 
                             # ---------------------------------------------------------
                             # SUB-VIEW: PROCESS ANALYTICS (TREND & DIST)
-                            # ---------------------------------------------------------
-                            if view_mode == "Process Analytics":
-                                int_lsl_series = get_limit_series(df, zh_key, "min", "管制", len(df)).loc[temp_df[data_col].notna()].reset_index(drop=True)
-                                int_usl_series = get_limit_series(df, zh_key, "max", "管制", len(df)).loc[temp_df[data_col].notna()].reset_index(drop=True)
-                                cust_lsl_series = get_limit_series(df, zh_key, "min", "客戶要求", len(df)).loc[temp_df[data_col].notna()].reset_index(drop=True)
-                                cust_usl_series = get_limit_series(df, zh_key, "max", "客戶要求", len(df)).loc[temp_df[data_col].notna()].reset_index(drop=True)
+                            # ---------------------------------------------------------
+                            if view_mode == "Process Analytics":
+                                int_lsl_series = get_limit_series(df, zh_key, "min", "管制", len(df)).loc[temp_df[data_col].notna()].reset_index(drop=True)
+                                int_usl_series = get_limit_series(df, zh_key, "max", "管制", len(df)).loc[temp_df[data_col].notna()].reset_index(drop=True)
+                                cust_lsl_series = get_limit_series(df, zh_key, "min", "客戶要求", len(df)).loc[temp_df[data_col].notna()].reset_index(drop=True)
+                                cust_usl_series = get_limit_series(df, zh_key, "max", "客戶要求", len(df)).loc[temp_df[data_col].notna()].reset_index(drop=True)
 
-                                if is_coating_line and short_key == "YPE":
-                                    int_lsl_series = pd.Series([4.0] * n)
-                                
-                                temp_plot_df = plot_df.copy()
-                                temp_plot_df['LSL_temp'] = int_lsl_series.fillna(-1).values
-                                temp_plot_df['USL_temp'] = int_usl_series.fillna(-1).values
-                                
-                                groups = temp_plot_df.groupby(['LSL_temp', 'USL_temp'])
-                                is_multi_group = len(groups) > 1
-                                
-                                calc_data = plot_data
-                                mu = calc_data.mean()
-                                sigma_fixed = calc_data.std(ddof=1)
-                                safe_sigma = sigma_fixed if pd.notnull(sigma_fixed) and sigma_fixed > 0 else 1
-                                safe_mu = mu if pd.notnull(mu) else plot_data.mean()
+                                if is_coating_line and short_key == "YPE":
+                                    int_lsl_series = pd.Series([4.0] * n)
+                                
+                                temp_plot_df = plot_df.copy()
+                                temp_plot_df['LSL_temp'] = int_lsl_series.fillna(-1).values
+                                temp_plot_df['USL_temp'] = int_usl_series.fillna(-1).values
+                                
+                                groups = temp_plot_df.groupby(['LSL_temp', 'USL_temp'])
+                                is_multi_group = len(groups) > 1
+                                
+                                calc_data = plot_data
+                                mu = calc_data.mean()
+                                sigma_fixed = calc_data.std(ddof=1)
+                                safe_sigma = sigma_fixed if pd.notnull(sigma_fixed) and sigma_fixed > 0 else 1
+                                safe_mu = mu if pd.notnull(mu) else plot_data.mean()
 
-                                tab_trend, tab_dist = st.tabs([f"📈 {selected_label} Trend", f"📊 {selected_label} Distribution"])
+                                tab_trend, tab_dist = st.tabs([f"📈 {selected_label} Trend", f"📊 {selected_label} Distribution"])
 
-                                with tab_trend:
-                                    fig_t, ax_t = plt.subplots(figsize=(11, 5.5)) 
-                                    x_coords = np.arange(1, n+1)
+                                with tab_trend:
+                                    fig_t, ax_t = plt.subplots(figsize=(11, 5.5)) 
+                                    x_coords = np.arange(1, n+1)
 
-                                    if not int_lsl_series.isna().all() and not int_usl_series.isna().all():
-                                        lower_bound = int_lsl_series.ffill().bfill()
-                                        upper_bound = int_usl_series.ffill().bfill()
-                                    else:
-                                        lower_bound = pd.Series([-np.inf] * n)
-                                        upper_bound = pd.Series([np.inf] * n)
+                                    if not int_lsl_series.isna().all() and not int_usl_series.isna().all():
+                                        lower_bound = int_lsl_series.ffill().bfill()
+                                        upper_bound = int_usl_series.ffill().bfill()
+                                    else:
+                                        lower_bound = pd.Series([-np.inf] * n)
+                                        upper_bound = pd.Series([np.inf] * n)
 
-                                    label_dict = {}
-                                    def add_to_label(val, name, color):
-                                        if pd.isna(val) or val <= 0: return
-                                        val = round(val, 1) 
-                                        if val not in label_dict: label_dict[val] = []
-                                        if not any(item['name'] == name for item in label_dict[val]):
-                                            label_dict[val].append({'name': name, 'color': color})
+                                    label_dict = {}
+                                    def add_to_label(val, name, color):
+                                        if pd.isna(val) or val <= 0: return
+                                        val = round(val, 1) 
+                                        if val not in label_dict: label_dict[val] = []
+                                        if not any(item['name'] == name for item in label_dict[val]):
+                                            label_dict[val].append({'name': name, 'color': color})
 
-                                    if not cust_lsl_series.isna().all():
-                                        for c_val in cust_lsl_series.dropna().unique():
-                                            if c_val > 0: 
-                                                ax_t.axhline(c_val, color="#00AA00", linestyle=":", linewidth=2.0, alpha=0.9)
-                                                add_to_label(c_val, "Cust LSL", "#00AA00")
-                                    if not cust_usl_series.isna().all():
-                                        for c_val in cust_usl_series.dropna().unique():
-                                            if c_val > 0: 
-                                                ax_t.axhline(c_val, color="#00AA00", linestyle=":", linewidth=2.0, alpha=0.9)
-                                                add_to_label(c_val, "Cust USL", "#00AA00")
+                                    if not cust_lsl_series.isna().all():
+                                        for c_val in cust_lsl_series.dropna().unique():
+                                            if c_val > 0: 
+                                                ax_t.axhline(c_val, color="#00AA00", linestyle=":", linewidth=2.0, alpha=0.9)
+                                                add_to_label(c_val, "Cust LSL", "#00AA00")
+                                    if not cust_usl_series.isna().all():
+                                        for c_val in cust_usl_series.dropna().unique():
+                                            if c_val > 0: 
+                                                ax_t.axhline(c_val, color="#00AA00", linestyle=":", linewidth=2.0, alpha=0.9)
+                                                add_to_label(c_val, "Cust USL", "#00AA00")
 
-                                    color_idx = 0
-                                    for (lsl, usl), group in groups:
-                                        c = THEME_COLORS[color_idx % len(THEME_COLORS)]
-                                        
-                                        c_mean = c if is_multi_group else "#0055FF"
-                                        c_limit = c if is_multi_group else "#FF0000"
-                                        
-                                        mask = temp_plot_df.index.isin(group.index)
-                                        spec_txt = format_spec(lsl, usl)
-                                        
-                                        group_mean = group[data_col].mean()
-                                        
-                                        ax_t.axhline(group_mean, color=c_mean, linestyle="-", linewidth=2.0, alpha=0.7, label="Group Theo. Value" if color_idx==0 else None)
-                                        add_to_label(group_mean, "Theo. Value", c_mean)
-                                        
-                                        if lsl != -1: 
-                                            ax_t.axhline(lsl, color=c_limit, linestyle="--", linewidth=2.0, alpha=1.0)
-                                            add_to_label(lsl, "Int LSL", c_limit)
-                                        if usl != -1: 
-                                            ax_t.axhline(usl, color=c_limit, linestyle="--", linewidth=2.0, alpha=1.0)
-                                            add_to_label(usl, "Int USL", c_limit)
-                                            
-                                        ax_t.scatter(x_coords[mask], plot_data[mask], color=c, s=40, edgecolor="black", linewidth=1.0, zorder=4, label=f"Data ({spec_txt})")
-                                        color_idx += 1
+                                    color_idx = 0
+                                    for (lsl, usl), group in groups:
+                                        c = THEME_COLORS[color_idx % len(THEME_COLORS)]
+                                        
+                                        c_mean = c if is_multi_group else "#0055FF"
+                                        c_limit = c if is_multi_group else "#FF0000"
+                                        
+                                        mask = temp_plot_df.index.isin(group.index)
+                                        spec_txt = format_spec(lsl, usl)
+                                        
+                                        group_mean = group[data_col].mean()
+                                        
+                                        ax_t.axhline(group_mean, color=c_mean, linestyle="-", linewidth=2.0, alpha=0.7, label="Group Theo. Value" if color_idx==0 else None)
+                                        add_to_label(group_mean, "Theo. Value", c_mean)
+                                        
+                                        if lsl != -1: 
+                                            ax_t.axhline(lsl, color=c_limit, linestyle="--", linewidth=2.0, alpha=1.0)
+                                            add_to_label(lsl, "Int LSL", c_limit)
+                                        if usl != -1: 
+                                            ax_t.axhline(usl, color=c_limit, linestyle="--", linewidth=2.0, alpha=1.0)
+                                            add_to_label(usl, "Int USL", c_limit)
+                                            
+                                        ax_t.scatter(x_coords[mask], plot_data[mask], color=c, s=40, edgecolor="black", linewidth=1.0, zorder=4, label=f"Data ({spec_txt})")
+                                        color_idx += 1
 
-                                    mask_out = (plot_data < lower_bound) | (plot_data > upper_bound)
-                                    if mask_out.any():
-                                        ax_t.scatter(x_coords[mask_out], plot_data[mask_out], color="#FF0000", s=60, edgecolor="#800000", linewidth=1.5, zorder=6, label="Out of Limit")
+                                    mask_out = (plot_data < lower_bound) | (plot_data > upper_bound)
+                                    if mask_out.any():
+                                        ax_t.scatter(x_coords[mask_out], plot_data[mask_out], color="#FF0000", s=60, edgecolor="#800000", linewidth=1.5, zorder=6, label="Out of Limit")
 
-                                    valid_y = plot_data.dropna()
-                                    ymin, ymax = valid_y.min(), valid_y.max()
-                                    for val in label_dict.keys():
-                                        ymin = min(ymin, val)
-                                        ymax = max(ymax, val)
-                                            
-                                    y_range = ymax - ymin if ymax > ymin else 10
-                                    ax_t.set_ylim(ymin - y_range*0.12, ymax + y_range*0.12)
-                                    ax_t.set_xlim(0, n * 1.18)
+                                    valid_y = plot_data.dropna()
+                                    ymin, ymax = valid_y.min(), valid_y.max()
+                                    for val in label_dict.keys():
+                                        ymin = min(ymin, val)
+                                        ymax = max(ymax, val)
+                                            
+                                    y_range = ymax - ymin if ymax > ymin else 10
+                                    ax_t.set_ylim(ymin - y_range*0.12, ymax + y_range*0.12)
+                                    ax_t.set_xlim(0, n * 1.18)
 
-                                    sorted_vals = sorted(label_dict.keys())
-                                    min_y_dist = y_range * 0.05  
-                                    last_y = -np.inf
-                                    
-                                    for val in sorted_vals:
-                                        items = label_dict[val]
-                                        names_str = " / ".join([item['name'] for item in items])
-                                        main_color = items[0]['color']
-                                        
-                                        y_draw = val
-                                        if y_draw - last_y < min_y_dist:
-                                            y_draw = last_y + min_y_dist
-                                            
-                                        ax_t.plot([n, n + (n*0.02)], [val, y_draw], color="black", linestyle="-", lw=1.0, alpha=0.4)
-                                        bbox = dict(boxstyle="round,pad=0.3", fc="#FFFFFF", ec=main_color, alpha=0.95, lw=1.5)
-                                        ax_t.text(n + (n*0.025), y_draw, f"{names_str}: {val:.1f}", color=main_color, va='center', ha='left', fontsize=9, bbox=bbox, fontweight='bold')
-                                        last_y = y_draw
+                                    sorted_vals = sorted(label_dict.keys())
+                                    min_y_dist = y_range * 0.05  
+                                    last_y = -np.inf
+                                    
+                                    for val in sorted_vals:
+                                        items = label_dict[val]
+                                        names_str = " / ".join([item['name'] for item in items])
+                                        main_color = items[0]['color']
+                                        
+                                        y_draw = val
+                                        if y_draw - last_y < min_y_dist:
+                                            y_draw = last_y + min_y_dist
+                                            
+                                        ax_t.plot([n, n + (n*0.02)], [val, y_draw], color="black", linestyle="-", lw=1.0, alpha=0.4)
+                                        bbox = dict(boxstyle="round,pad=0.3", fc="#FFFFFF", ec=main_color, alpha=0.95, lw=1.5)
+                                        ax_t.text(n + (n*0.025), y_draw, f"{names_str}: {val:.1f}", color=main_color, va='center', ha='left', fontsize=9, bbox=bbox, fontweight='bold')
+                                        last_y = y_draw
 
-                                    ax_t.set_xlabel("Coil Sequence")
-                                    ax_t.set_ylabel(f"{selected_label} Value")
-                                    ax_t.set_title(f"{selected_label} Trend Analysis (N={n})", pad=20)
-                                    
-                                    handles, labels = ax_t.get_legend_handles_labels()
-                                    by_label = dict(zip(labels, handles))
-                                    clean_dict = {k: v for k, v in by_label.items() if not k.startswith('_')}
-                                    ax_t.legend(clean_dict.values(), clean_dict.keys(), loc="upper center", bbox_to_anchor=(0.5, -0.15), ncol=4, fontsize=9)
-                                    
-                                    apply_full_border(ax_t); plt.tight_layout(); st.pyplot(fig_t)
-                                    
-                                    buf_t = export_to_word([fig_t], [f"Trend Analysis - {selected_label}"])
-                                    st.download_button(label=f"📥 Download Trend Chart ({selected_label})", data=buf_t, file_name=f"Trend_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_trend_{fname}_{selected_label}")
-                                    plt.close(fig_t)
-                                
-                                with tab_dist:
-                                    # 1. Calculate safe bounds BEFORE plotting to avoid NameError
-                                    x_min_data = plot_data.min()
-                                    x_max_data = plot_data.max()
-                                    x_range_data = x_max_data - x_min_data
-                                    x_lower_bound = x_min_data - (x_range_data * 0.1)
-                                    x_upper_bound = x_max_data + (x_range_data * 0.1)
+                                    ax_t.set_xlabel("Coil Sequence")
+                                    ax_t.set_ylabel(f"{selected_label} Value")
+                                    ax_t.set_title(f"{selected_label} Trend Analysis (N={n})", pad=20)
+                                    
+                                    handles, labels = ax_t.get_legend_handles_labels()
+                                    by_label = dict(zip(labels, handles))
+                                    clean_dict = {k: v for k, v in by_label.items() if not k.startswith('_')}
+                                    ax_t.legend(clean_dict.values(), clean_dict.keys(), loc="upper center", bbox_to_anchor=(0.5, -0.15), ncol=4, fontsize=9)
+                                    
+                                    apply_full_border(ax_t); plt.tight_layout(); st.pyplot(fig_t)
+                                    
+                                    buf_t = export_to_word([fig_t], [f"Trend Analysis - {selected_label}"])
+                                    st.download_button(label=f"📥 Download Trend Chart ({selected_label})", data=buf_t, file_name=f"Trend_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_trend_{fname}_{selected_label}")
+                                    plt.close(fig_t)
 
-                                    fig_d, ax_d = plt.subplots(figsize=(10, 6))
-                                    plt.subplots_adjust(top=0.8, bottom=0.15) 
-                                    
-                                    # 2. Plot histograms
-                                    hist_data, hist_labels = [], []
-                                    for (lsl, usl), group in groups:
-                                        hist_data.append(group[data_col].values)
-                                        hist_labels.append(f"Data ({format_spec(lsl, usl)})")
-                                        
-                                    if is_multi_group:
-                                        ax_d.hist(hist_data, bins=20, stacked=True, density=False, alpha=0.7, edgecolor="black", label=hist_labels, color=THEME_COLORS[:len(hist_data)])
-                                    else:
-                                        ax_d.hist(plot_data, bins=20, density=False, alpha=0.6, color="#0055FF", edgecolor="black", label="Data")
+                                with tab_dist:
+                                    fig_d, ax_d = plt.subplots(figsize=(11, 5.5))
+                                    
+                                    hist_data, hist_labels = [], []
+                                    color_idx = 0
+                                    for (lsl, usl), group in groups:
+                                        hist_data.append(group[data_col].values)
+                                        spec_txt = format_spec(lsl, usl)
+                                        hist_labels.append(f"Data ({spec_txt})")
+                                        color_idx += 1
+                                        
+                                    if is_multi_group:
+                                        ax_d.hist(hist_data, bins=20, stacked=True, density=False, alpha=0.8, edgecolor="black", label=hist_labels, color=THEME_COLORS[:len(hist_data)])
+                                    else:
+                                        ax_d.hist(plot_data, bins=20, density=False, alpha=0.6, color="#0055FF", edgecolor="black", label="Data")
 
-                                    ax_d.set_xlabel(f"{selected_label} Value")
-                                    ax_d.set_ylabel("Coil Count")
-                                    
-                                    # 3. Twin axis for Normal Fit
-                                    ax_pdf = ax_d.twinx()
-                                    xs = np.linspace(x_lower_bound, x_upper_bound, 500)
-                                    bin_w = (x_max_data - x_min_data) / 20 if x_range_data > 0 else 1
-                                    ax_pdf.plot(xs, norm.pdf(xs, safe_mu, safe_sigma) * n * bin_w, color="#111111", lw=1.5, label="Normal Fit")
-                                    ax_pdf.set_yticks([])
-                                    
-                                    # 4. Set ylim to leave space for labels
-                                    ax_d.set_ylim(0, ax_d.get_ylim()[1] * 1.4) 
-                                    
-                                    # 5. Labeling logic
-                                    lines_to_draw.sort(key=lambda x: x['val'])
-                                    trans = ax_d.get_xaxis_transform()
-                                    positions = [] 
-                                    
-                                    for item in lines_to_draw:
-                                        val = item['val']
-                                        ax_d.axvline(val, color=item['color'], linestyle=item['ls'], linewidth=2)
-                                        
-                                        y_top = ax_d.get_ylim()[1]
-                                        y_pos = y_top * 0.85
-                                        
-                                        for prev_val, prev_y in positions:
-                                            if abs(val - prev_val) < (x_range_data * 0.12):
-                                                y_pos = prev_y + (y_top * 0.1)
-                                        
-                                        positions.append((val, y_pos))
-                                        bbox = dict(boxstyle="round,pad=0.3", fc="white", ec=item['color'], alpha=0.9, lw=1)
-                                        ax_d.text(val, y_pos, f"{val:.1f}", color=item['color'], ha='center', va='center', 
-                                                  transform=trans, fontweight='bold', fontsize=9, bbox=bbox)
-                                                  
-                                    ax_d.set_title(f"{selected_label} Distribution (N={n})", pad=10, fontweight='bold')
-                                    ax_d.legend(loc="upper left", bbox_to_anchor=(1.05, 1), fontsize=8)
-                                    apply_full_border(ax_d)
-                                    st.pyplot(fig_d)
-                                    
-                                    # 6. Export once
-                                    buf_d = export_to_word([fig_d], [f"Distribution Analysis - {selected_label}"])
-                                    st.download_button(label=f"📥 Download Dist Chart ({selected_label})", data=buf_d, file_name=f"Dist_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_dist_{fname}_{selected_label}")
-                                    plt.close(fig_d)
-                                                                        
-                                    buf_d = export_to_word([fig_d], [f"Distribution Analysis - {selected_label}"])
-                                    st.download_button(label=f"📥 Download Dist Chart ({selected_label})", data=buf_d, file_name=f"Dist_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_dist_{fname}_{selected_label}")
-                                    plt.close(fig_d)
+                                    ax_d.yaxis.set_major_locator(MaxNLocator(integer=True))
+                                    ax_d.set_xlabel(f"{selected_label} Value")
+                                    ax_d.set_ylabel("Coil Count")
+                                    
+                                    ax_pdf = ax_d.twinx()
+                                    x_min_fit, x_max_fit = min(plot_data.min(), safe_mu - 4*safe_sigma), max(plot_data.max(), safe_mu + 4*safe_sigma)
+                                    xs = np.linspace(x_min_fit, x_max_fit, 500)
+                                    
+                                    bin_w = (plot_data.max() - plot_data.min()) / 20 if plot_data.max() > plot_data.min() else 1
+                                    y_vals = norm.pdf(xs, safe_mu, safe_sigma) * n * bin_w
+                                    ax_pdf.plot(xs, y_vals, color="#111111", lw=1.5, label="Normal Fit")
+                                    ax_pdf.set_yticks([])
+                                    
+                                    lines_to_draw = []
+                                    def register_vline(val, color, ls, label):
+                                        if val is not None and val > 0:
+                                            lines_to_draw.append({'val': val, 'color': color, 'ls': ls, 'label': label})
+
+                                    def register_multiple(limit_series, color, ls, base_label):
+                                        if limit_series is not None and not limit_series.isna().all():
+                                            unique_vals = limit_series.dropna().unique()
+                                            unique_vals = [v for v in unique_vals if v > 0]
+                                            for i, val in enumerate(unique_vals):
+                                                label = base_label if i == 0 else None
+                                                register_vline(val, color, ls, label)
+
+                                    color_idx = 0
+                                    for (lsl, usl), group in groups:
+                                        c = THEME_COLORS[color_idx % len(THEME_COLORS)]
+                                        
+                                        c_mean = c if is_multi_group else "#0055FF"
+                                        c_limit = c if is_multi_group else "#FF0000"
+                                        
+                                        group_mean = group[data_col].mean()
+                                        register_vline(group_mean, c_mean, "-", "Theo. Value" if color_idx==0 else None)
+                                        if lsl != -1: register_vline(lsl, c_limit, "--", "Int LSL" if color_idx==0 else None)
+                                        if usl != -1: register_vline(usl, c_limit, "--", "Int USL" if color_idx==0 else None)
+                                        color_idx += 1
+
+                                    register_multiple(cust_lsl_series, "#00AA00", "-", "Cust LSL")
+                                    register_multiple(cust_usl_series, "#00AA00", "-", "Cust USL")
+
+                                    lines_to_draw.sort(key=lambda x: x['val'])
+                                    x_range = x_max_fit - x_min_fit
+                                    min_dist = x_range * 0.09  
+                                    levels_last_x = [-np.inf] * 6  
+                                    trans = ax_d.get_xaxis_transform()
+                                    
+                                    for item in lines_to_draw:
+                                        val = item['val']
+                                        c = item['color']
+                                        ax_d.axvline(val, color=c, linestyle=item['ls'], linewidth=2.5, label=item['label'])
+                                        
+                                        assigned_level = 0
+                                        for i in range(len(levels_last_x)):
+                                            if (val - levels_last_x[i]) > min_dist:
+                                                assigned_level = i
+                                                levels_last_x[i] = val
+                                                break
+                                        else:
+                                            assigned_level = 5
+                                            levels_last_x[5] = val
+                                        
+                                        y_pos = 1.02 + (assigned_level * 0.08)
+                                        bbox_props = dict(boxstyle="round,pad=0.2", fc="white", ec=c, alpha=0.9, lw=1.5)
+                                        
+                                        ax_d.text(val, y_pos, f"{val:.1f}", color=c, ha='center', va='bottom', 
+                                                  transform=trans, fontweight='bold', fontsize=10, bbox=bbox_props)
+                                    # ==========================================
+                                    
+                                    ax_d.set_title(f"{selected_label} Distribution (N={n})", pad=110) 
+                                    
+                                    handles, labels = ax_d.get_legend_handles_labels()
+                                    handles_pdf, labels_pdf = ax_pdf.get_legend_handles_labels()
+                                    by_label = dict(zip(labels + labels_pdf, handles + handles_pdf))
+                                    clean_dict = {k: v for k, v in by_label.items() if k is not None and k != ''}
+                                    
+                                    ax_d.legend(clean_dict.values(), clean_dict.keys(), loc="upper left", bbox_to_anchor=(1, 1))
+                                    apply_full_border(ax_d)
+                                    plt.tight_layout(rect=[0, 0, 1, 0.9]) 
+                                    st.pyplot(fig_d)
+                                    
+                                    buf_d = export_to_word([fig_d], [f"Distribution Analysis - {selected_label}"])
+                                    st.download_button(label=f"📥 Download Dist Chart ({selected_label})", data=buf_d, file_name=f"Dist_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_dist_{fname}_{selected_label}")
+                                    plt.close(fig_d)
                                     
                             # ---------------------------------------------------------                            
                             # ---------------------------------------------------------
