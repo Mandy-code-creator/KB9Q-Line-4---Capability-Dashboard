@@ -61,7 +61,9 @@ def get_limit_series(df, keyword, limit_type, category, length):
         s = pd.to_numeric(df[col], errors='coerce')
         s = s.mask(s <= 0, np.nan).ffill().bfill()
         return s
-    return pd.Series([np.nan] * length)
+    
+    # [FIX LỖI INDEXING]: Gắn thêm index=df.index để đồng bộ với dataframe đã bị filter
+    return pd.Series([np.nan] * length, index=df.index)
 
 def format_num(val):
     if val is None or pd.isna(val): return "-"
