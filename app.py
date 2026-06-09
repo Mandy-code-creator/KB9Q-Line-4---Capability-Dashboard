@@ -764,6 +764,7 @@ if uploaded_files:
                                     plt.close(fig_d)
                                     
                             # ---------------------------------------------------------
+                            # ---------------------------------------------------------
                             # SUB-VIEW: SPC CONTROL CHARTS (I-MR)
                             # ---------------------------------------------------------
                             elif view_mode == "SPC Control Charts (I-MR)":
@@ -777,18 +778,43 @@ if uploaded_files:
                                     temp_spc_df['Thick_Num'] = thick_series
                                     temp_spc_df = temp_spc_df.dropna(subset=[data_col]).reset_index(drop=True)
                                     
-                                    g1 = temp_spc_df[temp_spc_df['Thick_Num'] <= 0.60]
-                                    g2 = temp_spc_df[temp_spc_df['Thick_Num'] > 0.60]
-                                    g_nan = temp_spc_df[temp_spc_df['Thick_Num'].isna()]
+                                    # ==========================================
+                                    # THICKNESS FILTER FOR SPC CHART
+                                    # ==========================================
+                                    valid_thick = temp_spc_df['Thick_Num'].dropna()
+                                    if not valid_thick.empty:
+                                        min_t = float(valid_thick.min())
+                                        max_t = float(valid_thick.max())
+                                        
+                                        if min_t < max_t:
+                                            c_f1, c_f2 = st.columns([1, 2]) 
+                                            with c_f1:
+                                                selected_thick = st.slider(
+                                                    f"🎚️ Thickness Range ({line_label}):", 
+                                                    min_value=min_t, 
+                                                    max_value=max_t, 
+                                                    value=(min_t, max_t), 
+                                                    step=0.01, 
+                                                    key=f"spc_thick_slider_{fname}_{selected_label}"
+                                                )
+                                            # Lọc dữ liệu theo cuộn (Coil-level logic)
+                                            temp_spc_df = temp_spc_df[
+                                                (temp_spc_df['Thick_Num'].isna()) | 
+                                                ((temp_spc_df['Thick_Num'] >= selected_thick[0]) & (temp_spc_df['Thick_Num'] <= selected_thick[1]))
+                                            ]
+                                        else:
+                                            st.info(f"ℹ️ All coils for {selected_label} have the exact same thickness ({min_t}). Filter disabled.")
+                                    # ==========================================
                                     
-                                    if not g1.empty: spc_groups.append(("Thickness <= 0.60", g1))
-                                    if not g2.empty: spc_groups.append(("Thickness > 0.60", g2))
-                                    if not g_nan.empty: spc_groups.append(("Unknown Thickness", g_nan))
-                                    
-                                    st.markdown(f"#### 📐 Control Parameters Table (By Thickness)")
+                                    # Dữ liệu gộp chung làm 1 nhóm sau khi đã đi qua bộ lọc
+                                    if not temp_spc_df.empty:
+                                        spc_groups.append(("Filtered Data", temp_spc_df))
+                                        
+                                    st.markdown(f"#### 📐 Control Parameters Table")
                                 else:
                                     temp_spc_df = temp_spc_df.dropna(subset=[data_col]).reset_index(drop=True)
-                                    spc_groups.append(("Global Data", temp_spc_df))
+                                    if not temp_spc_df.empty:
+                                        spc_groups.append(("Global Data", temp_spc_df))
                                     st.warning("⚠️ 'Thickness' column not found. Calculating globally.")
                                     st.markdown(f"#### 📐 Control Parameters Table")
 
@@ -851,7 +877,7 @@ if uploaded_files:
                                 ax_i.set_title(f"I-Chart: Dynamic Control Limits ({selected_label})", pad=20)
                                 
                                 custom_lines = [
-                                    mlines.Line2D([], [], color='black', linestyle='-', lw=2.0, alpha=0.8, label='Group Theo. Value'),
+                                    mlines.Line2D([], [], color='black', linestyle='-', lw=2.0, alpha=0.8, label='Theo. Value'),
                                     mlines.Line2D([], [], color='black', linestyle='--', lw=1.8, alpha=0.8, label=f'UCL/LCL ({k_std}σ)'),
                                     mlines.Line2D([], [], color='black', linestyle=':', lw=2.5, alpha=0.8, label=f'UCL/LCL (IQR)')
                                 ]
@@ -861,9 +887,10 @@ if uploaded_files:
                                 ax_i.legend(list(by_label.values()) + custom_lines, list(by_label.keys()) + [l.get_label() for l in custom_lines], loc="upper left", bbox_to_anchor=(1, 1))
                                 
                                 valid_y = temp_spc_df[data_col].dropna()
-                                ymin, ymax = valid_y.min(), valid_y.max()
-                                y_range = ymax - ymin if ymax > ymin else 10
-                                ax_i.set_ylim(ymin - y_range*0.1, ymax + y_range*0.1)
+                                if not valid_y.empty:
+                                    ymin, ymax = valid_y.min(), valid_y.max()
+                                    y_range = ymax - ymin if ymax > ymin else 10
+                                    ax_i.set_ylim(ymin - y_range*0.1, ymax + y_range*0.1)
                                 
                                 apply_full_border(ax_i); plt.tight_layout(rect=[0, 0, 0.85, 1]); st.pyplot(fig_imr)
                                 
