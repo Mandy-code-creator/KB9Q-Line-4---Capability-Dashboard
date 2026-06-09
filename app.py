@@ -745,7 +745,26 @@ if uploaded_files:
                                         
                                         ax_d.text(val, y_pos, f"{val:.1f}", color=c, ha='center', va='bottom', 
                                                   transform=trans, fontweight='bold', fontsize=10, bbox=bbox_props)
+                                    # ==========================================
+                                    # FIX LỆCH TRỤC X: TỰ ĐỘNG CẮT CÁC GIỚI HẠN QUÁ XA
+                                    # ==========================================
+                                    # 1. Xác định vùng cốt lõi (Data thực tế và đường chuông ± 4.5 Sigma)
+                                    core_min = min(plot_data.min(), safe_mu - 4.5 * safe_sigma)
+                                    core_max = max(plot_data.max(), safe_mu + 4.5 * safe_sigma)
                                     
+                                    # 2. Chỉ nới trục X để chứa limit line NẾU limit đó nằm trong khoảng hợp lý (± 6 Sigma)
+                                    for item in lines_to_draw:
+                                        val = item['val']
+                                        if (safe_mu - 6 * safe_sigma) <= val <= (safe_mu + 6 * safe_sigma):
+                                            core_min = min(core_min, val)
+                                            core_max = max(core_max, val)
+
+                                    # 3. Ép trục X với một chút đệm (padding 8%) cho thoáng hai bên
+                                    x_margin = (core_max - core_min) * 0.08
+                                    ax_d.set_xlim(core_min - x_margin, core_max + x_margin)
+                                    # ==========================================
+                                    
+                                    ax_d.set_title(f"{selected_label} Distribution (N={n})", pad=110)
                                     ax_d.set_title(f"{selected_label} Distribution (N={n})", pad=110) 
                                     
                                     handles, labels = ax_d.get_legend_handles_labels()
