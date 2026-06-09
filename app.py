@@ -769,132 +769,71 @@ if uploaded_files:
                             # SUB-VIEW: SPC CONTROL CHARTS (I-MR)
                             # ---------------------------------------------------------
                             elif view_mode == "SPC Control Charts (I-MR)":
-                            
-                                # ── BỘ LỌC ĐỘ DÀY ────────────────────────────────────
-                                col_f1, col_f2 = st.columns([1, 3])
-                                with col_f1:
-                                    all_thick = sorted(df['Thickness'].dropna().unique().tolist())
-                                    selected_thick = st.multiselect(
-                                        "🔧 Filter by Thickness",
-                                        options=all_thick,
-                                        default=all_thick,
-                                        key=f"spc_thick_{fname}_{selected_label}"
+                                # 1. RE-FILTERING LOGIC (Ensure Slider is always active here)
+                                thick_col, thick_series = get_clean_thickness(df)
+                                temp_spc_df = df[[data_col]].copy()
+                                temp_spc_df[data_col] = pd.to_numeric(temp_spc_df[data_col], errors='coerce')
+                                
+                                if thick_col:
+                                    temp_spc_df['Thick_Num'] = thick_series
+                                    min_t, max_t = float(temp_spc_df['Thick_Num'].min()), float(temp_spc_df['Thick_Num'].max())
+                                    
+                                    # This slider will always show when you are in SPC mode
+                                    selected_thick = st.slider(
+                                        f"🎚️ Thickness Range ({line_label}):", 
+                                        min_value=min_t, max_value=max_t, value=(min_t, max_t), step=0.01,
+                                        key=f"spc_slider_{fname}_{selected_label}"
                                     )
-                                df_spc = df[df['Thickness'].isin(selected_thick)] if selected_thick else df.copy()
-                            
-                                if df_spc.empty:
-                                    st.warning("No data for selected thickness. Please adjust the filter.")
-                                else:
-                                    # ── PREP DATA ─────────────────────────────────────
-                                    temp_spc_df = df_spc[[data_col]].copy()
-                                    temp_spc_df[data_col] = pd.to_numeric(temp_spc_df[data_col], errors='coerce')
-                                    temp_spc_df = temp_spc_df.dropna(subset=[data_col]).reset_index(drop=True)
-                            
-                                    spc_groups = []
-                                    if not temp_spc_df.empty:
-                                        spc_groups.append(("Filtered Data", temp_spc_df))
-                            
-                                    # ── CONTROL PARAMETERS TABLE ──────────────────────
-                                    st.markdown(f"#### 📐 Control Parameters Table")
-                            
-                                    spc_stats = []
-                                    for g_name, group in spc_groups:
-                                        g_data = group[data_col].dropna()
-                                        if len(g_data) > 1:
-                                            g_n   = len(g_data)
-                                            g_mu  = g_data.mean()
-                                            g_sig = g_data.std(ddof=1)
-                                            g_q1, g_q3 = g_data.quantile(0.25), g_data.quantile(0.75)
-                                            g_iqr = g_q3 - g_q1
-                            
-                                            spc_stats.append({
-                                                "Category"                          : g_name,
-                                                "N"                                 : g_n,
-                                                "Theo. Value"                       : format_num(g_mu),
-                                                "Sigma"                             : format_num(g_sig),
-                                                f"Mill Range Upper ({k_std}σ)"      : format_num(g_mu + k_std*g_sig),
-                                                f"Mill Range Lower ({k_std}σ)"      : format_num(g_mu - k_std*g_sig),
-                                                "IQR"                               : format_num(g_iqr),
-                                                "UCL (IQR)"                         : format_num(g_q3 + k_iqr*g_iqr),
-                                                "LCL (IQR)"                         : format_num(g_q1 - k_iqr*g_iqr)
-                                            })
-                            
-                                    if spc_stats:
-                                        st.dataframe(pd.DataFrame(spc_stats), hide_index=True, use_container_width=True)
-                            
-                                    # ── I-CHART ───────────────────────────────────────
-                                    fig_imr, ax_i = plt.subplots(figsize=(11, 5.5))
-                                    x_coords_spc  = np.arange(1, len(temp_spc_df)+1)
-                            
-                                    ax_i.plot(x_coords_spc, temp_spc_df[data_col],
-                                              color="#CFD8DC", linestyle="-", linewidth=1.5, zorder=1)
-                            
-                                    color_idx = 0
-                                    for g_name, group in spc_groups:
-                                        c    = THEME_COLORS[color_idx % len(THEME_COLORS)]
-                                        mask = temp_spc_df.index.isin(group.index)
-                                        g_data = group[data_col].dropna()
-                            
-                                        if len(g_data) > 1:
-                                            g_mu  = g_data.mean()
-                                            g_sig = g_data.std(ddof=1)
-                                            g_q1, g_q3 = g_data.quantile(0.25), g_data.quantile(0.75)
-                                            g_iqr = g_q3 - g_q1
-                            
-                                            ax_i.scatter(x_coords_spc[mask], temp_spc_df[data_col][mask],
-                                                         color=c, s=40, edgecolor="black",
-                                                         linewidth=1.0, zorder=3, label=f"Data ({g_name})")
-                                            ax_i.axhline(g_mu,                  color=c, linestyle="-",  linewidth=2.0, alpha=0.8)
-                                            ax_i.axhline(g_mu + k_std*g_sig,    color=c, linestyle="--", linewidth=1.8, alpha=0.8)
-                                            ax_i.axhline(g_mu - k_std*g_sig,    color=c, linestyle="--", linewidth=1.8, alpha=0.8)
-                                            ax_i.axhline(g_q3 + k_iqr*g_iqr,   color=c, linestyle=":",  linewidth=2.5, alpha=0.8)
-                                            ax_i.axhline(g_q1 - k_iqr*g_iqr,   color=c, linestyle=":",  linewidth=2.5, alpha=0.8)
-                                        color_idx += 1
-                            
-                                    # Tiêu đề có thêm thông tin thickness đang lọc
-                                    thick_label = ", ".join(str(t) for t in selected_thick) if selected_thick else "All"
-                                    ax_i.set_xlabel("Coil Sequence")
-                                    ax_i.set_ylabel(f"{selected_label} Value")
-                                    ax_i.set_title(
-                                        f"I-Chart: Dynamic Control Limits ({selected_label})  |  Thickness: {thick_label}",
-                                        pad=20
-                                    )
-                            
-                                    custom_lines = [
-                                        mlines.Line2D([], [], color='black', linestyle='-',  lw=2.0, alpha=0.8, label='Mean'),
-                                        mlines.Line2D([], [], color='black', linestyle='--', lw=1.8, alpha=0.8, label=f'Mill Range ({k_std}σ)'),
-                                        mlines.Line2D([], [], color='black', linestyle=':',  lw=2.5, alpha=0.8, label='UCL/LCL (IQR)')
+                                    temp_spc_df = temp_spc_df[
+                                        (temp_spc_df['Thick_Num'].isna()) | 
+                                        ((temp_spc_df['Thick_Num'] >= selected_thick[0]) & (temp_spc_df['Thick_Num'] <= selected_thick[1]))
                                     ]
-                            
-                                    handles, labels = ax_i.get_legend_handles_labels()
-                                    by_label = dict(zip(labels, handles))
-                                    ax_i.legend(
-                                        list(by_label.values()) + custom_lines,
-                                        list(by_label.keys())   + [l.get_label() for l in custom_lines],
-                                        loc="upper left", bbox_to_anchor=(1, 1)
-                                    )
-                            
-                                    valid_y = temp_spc_df[data_col].dropna()
-                                    if not valid_y.empty:
-                                        ymin, ymax = valid_y.min(), valid_y.max()
-                                        y_range = ymax - ymin if ymax > ymin else 10
-                                        ax_i.set_ylim(ymin - y_range*0.1, ymax + y_range*0.1)
-                            
-                                    apply_full_border(ax_i)
-                                    plt.tight_layout(rect=[0, 0, 0.85, 1])
-                                    st.pyplot(fig_imr)
-                            
-                                    # ── DOWNLOAD ──────────────────────────────────────
-                                    buf_i = export_to_word([fig_imr], [f"SPC I-Chart Analysis - {selected_label}"])
-                                    st.download_button(
-                                        label     = f"📥 Download SPC Chart ({selected_label})",
-                                        data      = buf_i,
-                                        file_name = f"SPC_Report_{selected_label}.docx",
-                                        mime      = "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                                        key       = f"dl_spc_{fname}_{selected_label}"
-                                    )
-                                    plt.close(fig_imr)
-                            
+                                
+                                temp_spc_df = temp_spc_df.dropna(subset=[data_col]).reset_index(drop=True)
+                                spc_groups = [("Filtered Data", temp_spc_df)] if not temp_spc_df.empty else []
+                                    
+                                st.markdown(f"#### 📐 Control Parameters Table")
+
+                                # 2. DATA CALCULATION & TABLE
+                                spc_stats = []
+                                for g_name, group in spc_groups:
+                                    g_data = group[data_col].dropna()
+                                    if len(g_data) > 1:
+                                        g_n, g_mu, g_sig = len(g_data), g_data.mean(), g_data.std(ddof=1)
+                                        g_q1, g_q3 = g_data.quantile(0.25), g_data.quantile(0.75)
+                                        g_iqr = g_q3 - g_q1
+                                        spc_stats.append({
+                                            "Category": g_name, "N": g_n, "Mean": format_num(g_mu), "Sigma": format_num(g_sig),
+                                            f"Mill Range Upper ({k_std}σ)": format_num(g_mu + k_std*g_sig),
+                                            f"Mill Range Lower ({k_std}σ)": format_num(g_mu - k_std*g_sig),
+                                            "IQR": format_num(g_iqr),
+                                            "UCL (IQR)": format_num(g_q3 + k_iqr*g_iqr),
+                                            "LCL (IQR)": format_num(g_q1 - k_iqr*g_iqr)
+                                        })
+                                if spc_stats: st.dataframe(pd.DataFrame(spc_stats), hide_index=True, use_container_width=True)
+
+                                # 3. CHART PLOTTING
+                                fig_imr, ax_i = plt.subplots(figsize=(11, 5.5)) 
+                                ax_i.plot(np.arange(1, len(temp_spc_df)+1), temp_spc_df[data_col], color="#CFD8DC", linestyle="-", linewidth=1.5, zorder=1)
+                                
+                                if spc_groups:
+                                    g_mu = temp_spc_df[data_col].mean()
+                                    g_sig = temp_spc_df[data_col].std(ddof=1)
+                                    ax_i.scatter(np.arange(1, len(temp_spc_df)+1), temp_spc_df[data_col], color="#0055FF", s=40, edgecolor="black", zorder=3)
+                                    ax_i.axhline(g_mu, color="#0055FF", linestyle="-", linewidth=2.0, label='Mean')
+                                    ax_i.axhline(g_mu + k_std*g_sig, color="#FF0000", linestyle="--", linewidth=1.8, label=f'Mill Range ({k_std}σ)')
+                                    ax_i.axhline(g_mu - k_std*g_sig, color="#FF0000", linestyle="--", linewidth=1.8)
+                                
+                                ax_i.set_xlabel("Coil Sequence"); ax_i.set_ylabel(f"{selected_label} Value")
+                                ax_i.set_title(f"I-Chart: Dynamic Control Limits ({selected_label})", pad=20)
+                                ax_i.legend(loc="upper left", bbox_to_anchor=(1, 1))
+                                
+                                apply_full_border(ax_i); plt.tight_layout(rect=[0, 0, 0.85, 1]); st.pyplot(fig_imr)
+                                
+                                buf_i = export_to_word([fig_imr], [f"SPC I-Chart Analysis - {selected_label}"])
+                                st.download_button(label=f"📥 Download SPC Chart ({selected_label})", data=buf_i, file_name=f"SPC_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_spc_{fname}_{selected_label}")
+                                plt.close(fig_imr)
+                                
                             gc.collect()
 else:
     st.info("👈 Please upload the production report to start.")
