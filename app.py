@@ -661,103 +661,65 @@ if uploaded_files:
                                     st.download_button(label=f"📥 Download Trend Chart ({selected_label})", data=buf_t, file_name=f"Trend_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_trend_{fname}_{selected_label}")
                                     plt.close(fig_t)
 
-                                with tab_dist:
-                                    fig_d, ax_d = plt.subplots(figsize=(11, 5.5))
+                                # Create figure with tighter layout
+                                    fig_d, ax_d = plt.subplots(figsize=(10, 5))
+                                    plt.subplots_adjust(top=0.85, bottom=0.15) # Tighten the top space
                                     
+                                    # Plot histograms
                                     hist_data, hist_labels = [], []
-                                    color_idx = 0
                                     for (lsl, usl), group in groups:
                                         hist_data.append(group[data_col].values)
-                                        spec_txt = format_spec(lsl, usl)
-                                        hist_labels.append(f"Data ({spec_txt})")
-                                        color_idx += 1
+                                        hist_labels.append(f"Data ({format_spec(lsl, usl)})")
                                         
                                     if is_multi_group:
-                                        ax_d.hist(hist_data, bins=20, stacked=True, density=False, alpha=0.8, edgecolor="black", label=hist_labels, color=THEME_COLORS[:len(hist_data)])
+                                        ax_d.hist(hist_data, bins=20, stacked=True, density=False, alpha=0.7, edgecolor="black", label=hist_labels, color=THEME_COLORS[:len(hist_data)])
                                     else:
                                         ax_d.hist(plot_data, bins=20, density=False, alpha=0.6, color="#0055FF", edgecolor="black", label="Data")
 
-                                    ax_d.yaxis.set_major_locator(MaxNLocator(integer=True))
                                     ax_d.set_xlabel(f"{selected_label} Value")
                                     ax_d.set_ylabel("Coil Count")
                                     
+                                    # Twin axis for Normal Fit
                                     ax_pdf = ax_d.twinx()
-                                    x_min_fit, x_max_fit = min(plot_data.min(), safe_mu - 4*safe_sigma), max(plot_data.max(), safe_mu + 4*safe_sigma)
-                                    xs = np.linspace(x_min_fit, x_max_fit, 500)
-                                    
+                                    xs = np.linspace(x_lower_bound, x_upper_bound, 500)
                                     bin_w = (plot_data.max() - plot_data.min()) / 20 if plot_data.max() > plot_data.min() else 1
-                                    y_vals = norm.pdf(xs, safe_mu, safe_sigma) * n * bin_w
-                                    ax_pdf.plot(xs, y_vals, color="#111111", lw=1.5, label="Normal Fit")
+                                    ax_pdf.plot(xs, norm.pdf(xs, safe_mu, safe_sigma) * n * bin_w, color="#111111", lw=1.5, label="Normal Fit")
                                     ax_pdf.set_yticks([])
                                     
-                                    lines_to_draw = []
-                                    def register_vline(val, color, ls, label):
-                                        if val is not None and val > 0:
-                                            lines_to_draw.append({'val': val, 'color': color, 'ls': ls, 'label': label})
-
-                                    def register_multiple(limit_series, color, ls, base_label):
-                                        if limit_series is not None and not limit_series.isna().all():
-                                            unique_vals = limit_series.dropna().unique()
-                                            unique_vals = [v for v in unique_vals if v > 0]
-                                            for i, val in enumerate(unique_vals):
-                                                label = base_label if i == 0 else None
-                                                register_vline(val, color, ls, label)
-
-                                    color_idx = 0
-                                    for (lsl, usl), group in groups:
-                                        c = THEME_COLORS[color_idx % len(THEME_COLORS)]
-                                        
-                                        c_mean = c if is_multi_group else "#0055FF"
-                                        c_limit = c if is_multi_group else "#FF0000"
-                                        
-                                        group_mean = group[data_col].mean()
-                                        register_vline(group_mean, c_mean, "-", "Theo. Value" if color_idx==0 else None)
-                                        if lsl != -1: register_vline(lsl, c_limit, "--", "Int LSL" if color_idx==0 else None)
-                                        if usl != -1: register_vline(usl, c_limit, "--", "Int USL" if color_idx==0 else None)
-                                        color_idx += 1
-
-                                    register_multiple(cust_lsl_series, "#00AA00", "-", "Cust LSL")
-                                    register_multiple(cust_usl_series, "#00AA00", "-", "Cust USL")
-
+                                    # Optimized labeling logic (Prevents overlapping)
                                     lines_to_draw.sort(key=lambda x: x['val'])
-                                    x_range = x_max_fit - x_min_fit
-                                    min_dist = x_range * 0.09  
-                                    levels_last_x = [-np.inf] * 6  
                                     trans = ax_d.get_xaxis_transform()
                                     
+                                    # Track positions to prevent overlap
+                                    positions = [] 
                                     for item in lines_to_draw:
                                         val = item['val']
-                                        c = item['color']
-                                        ax_d.axvline(val, color=c, linestyle=item['ls'], linewidth=2.5, label=item['label'])
+                                        ax_d.axvline(val, color=item['color'], linestyle=item['ls'], linewidth=2)
                                         
-                                        assigned_level = 0
-                                        for i in range(len(levels_last_x)):
-                                            if (val - levels_last_x[i]) > min_dist:
-                                                assigned_level = i
-                                                levels_last_x[i] = val
-                                                break
-                                        else:
-                                            assigned_level = 5
-                                            levels_last_x[5] = val
+                                        # Calculate Y position: start above chart (1.02), increment if collision
+                                        y_pos = 1.02
+                                        for prev_val, prev_y in positions:
+                                            if abs(val - prev_val) < (x_range * 0.08): # If too close horizontally
+                                                y_pos = prev_y + 0.08 # Push higher
                                         
-                                        y_pos = 1.02 + (assigned_level * 0.08)
-                                        bbox_props = dict(boxstyle="round,pad=0.2", fc="white", ec=c, alpha=0.9, lw=1.5)
+                                        positions.append((val, y_pos))
                                         
-                                        ax_d.text(val, y_pos, f"{val:.1f}", color=c, ha='center', va='bottom', 
-                                                  transform=trans, fontweight='bold', fontsize=10, bbox=bbox_props)
-                                    # ==========================================
+                                        bbox = dict(boxstyle="round,pad=0.3", fc="white", ec=item['color'], alpha=0.9, lw=1)
+                                        ax_d.text(val, y_pos, f"{val:.1f}", color=item['color'], ha='center', va='bottom', 
+                                                  transform=trans, fontweight='bold', fontsize=9, bbox=bbox)
+                                                  
+                                    # Set title closer to chart
+                                    ax_d.set_title(f"{selected_label} Distribution (N={n})", pad=20, fontweight='bold')
                                     
-                                    ax_d.set_title(f"{selected_label} Distribution (N={n})", pad=110) 
-                                    
-                                    handles, labels = ax_d.get_legend_handles_labels()
-                                    handles_pdf, labels_pdf = ax_pdf.get_legend_handles_labels()
-                                    by_label = dict(zip(labels + labels_pdf, handles + handles_pdf))
-                                    clean_dict = {k: v for k, v in by_label.items() if k is not None and k != ''}
-                                    
-                                    ax_d.legend(clean_dict.values(), clean_dict.keys(), loc="upper left", bbox_to_anchor=(1, 1))
+                                    # Legend adjustment
+                                    ax_d.legend(loc="upper left", bbox_to_anchor=(1.05, 1), fontsize=8)
                                     apply_full_border(ax_d)
-                                    plt.tight_layout(rect=[0, 0, 1, 0.9]) 
                                     st.pyplot(fig_d)
+                                    
+                                    # Export
+                                    buf_d = export_to_word([fig_d], [f"Distribution Analysis - {selected_label}"])
+                                    st.download_button(label=f"📥 Download Dist Chart ({selected_label})", data=buf_d, file_name=f"Dist_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_dist_{fname}_{selected_label}")
+                                    plt.close(fig_d)
                                     
                                     buf_d = export_to_word([fig_d], [f"Distribution Analysis - {selected_label}"])
                                     st.download_button(label=f"📥 Download Dist Chart ({selected_label})", data=buf_d, file_name=f"Dist_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_dist_{fname}_{selected_label}")
