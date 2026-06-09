@@ -9,7 +9,7 @@ import io
 from docx import Document
 from docx.shared import Inches
 import matplotlib.lines as mlines
-import gc # Garbage Collector để dọn dẹp RAM
+import gc 
 
 # ==========================================
 # 1. PAGE CONFIGURATION & FONTS
@@ -20,25 +20,24 @@ plt.rcParams['font.sans-serif'] = ['Arial', 'Helvetica', 'sans-serif']
 plt.rcParams['axes.unicode_minus'] = False
 
 plt.rcParams.update({
-    'font.size': 10,  # Giảm size font xuống một chút để đồ thị gọn hơn
+    'font.size': 10,  
     'axes.labelweight': 'bold',
     'axes.titleweight': 'bold',
     'axes.titlesize': 13,
     'legend.fontsize': 9,
     'font.weight': 'bold',
     'lines.linewidth': 2.0,
-    'figure.dpi': 100  # QUAN TRỌNG: Giảm DPI từ 150 xuống 100 giúp giảm 50% RAM khi render hình
+    'figure.dpi': 100  
 })
 
 THEME_COLORS = ['#0055FF', '#FF6600', '#00AA00', '#9900FF', '#CC0055', '#009999']
 MUTED_COLORS = ['#4A90E2', '#E67E22', '#27AE60', '#9B59B6', '#34495E', '#F1C40F']
 
 # ==========================================
-# 2. UTILITY FUNCTIONS (TỐI ƯU HÓA)
+# 2. UTILITY FUNCTIONS
 # ==========================================
-@st.cache_data(max_entries=3) # QUAN TRỌNG: Giới hạn Cache chỉ lưu 3 file gần nhất để tránh tràn RAM
+@st.cache_data(max_entries=3) 
 def load_and_clean_data(file):
-    # Đọc file và chỉ lấy các cột cần thiết (nếu có thể tối ưu thêm)
     df = pd.read_csv(file) if file.name.endswith('.csv') else pd.read_excel(file)
     df.columns = [str(c).strip() for c in df.columns]
     return df
@@ -92,7 +91,6 @@ def export_to_word(figures, titles):
     for fig, title in zip(figures, titles):
         doc.add_heading(title, level=1)
         img_stream = io.BytesIO()
-        # Giảm DPI khi lưu Word xuống 200 để tránh tràn RAM lúc xuất file
         fig.savefig(img_stream, format='png', dpi=200, bbox_inches='tight')
         img_stream.seek(0)
         doc.add_picture(img_stream, width=Inches(5.5))
@@ -156,13 +154,11 @@ if uploaded_files:
                     col_ma = find_data_col(df_ma, short_key)
                     col_son = find_data_col(df_son, short_key)
 
-                    # 1. Tìm các cột phân loại (Độ dày và Cấp chất lượng)
                     thick_col_ma = next((c for c in df_ma.columns if "厚度" in str(c) or "thickness" in str(c).lower()), None)
                     thick_col_son = next((c for c in df_son.columns if "厚度" in str(c) or "thickness" in str(c).lower()), None)
                     grade_col_ma = next((c for c in df_ma.columns if "等級" in str(c) or "grade" in str(c).lower()), None)
                     grade_col_son = next((c for c in df_son.columns if "等級" in str(c) or "grade" in str(c).lower()), None)
 
-                    # 2. Xử lý dữ liệu Mạ (Galvanizing) - Gộp chung trước khi Drop NA để giữ nguyên Index
                     cols_ma = [col_ma] + ([thick_col_ma] if thick_col_ma else []) + ([grade_col_ma] if grade_col_ma else [])
                     temp_ma = df_ma[list(set(cols_ma))].copy()
                     temp_ma['val'] = pd.to_numeric(temp_ma[col_ma], errors='coerce')
@@ -171,12 +167,10 @@ if uploaded_files:
                         temp_ma['Thick_Num'] = pd.to_numeric(temp_ma[thick_col_ma], errors='coerce')
                         
                     if grade_col_ma:
-                        # Lọc nghiêm ngặt: Chỉ lấy cuộn có chất lượng từ A-B trở lên để tính limits
                         temp_ma = temp_ma[temp_ma[grade_col_ma].astype(str).str.upper().str.contains('A|B|PRIME|1|2', na=True)]
 
                     temp_ma = temp_ma.dropna(subset=['val']).reset_index(drop=True)
 
-                    # 3. Xử lý dữ liệu Sơn (Coating) - Tương tự như Mạ
                     cols_son = [col_son] + ([thick_col_son] if thick_col_son else []) + ([grade_col_son] if grade_col_son else [])
                     temp_son = df_son[list(set(cols_son))].copy()
                     temp_son['val'] = pd.to_numeric(temp_son[col_son], errors='coerce')
@@ -185,7 +179,6 @@ if uploaded_files:
                         temp_son['Thick_Num'] = pd.to_numeric(temp_son[thick_col_son], errors='coerce')
 
                     if grade_col_son:
-                        # Lọc nghiêm ngặt: Chỉ lấy cuộn có chất lượng từ A-B trở lên để tính limits
                         temp_son = temp_son[temp_son[grade_col_son].astype(str).str.upper().str.contains('A|B|PRIME|1|2', na=True)]
 
                     temp_son = temp_son.dropna(subset=['val']).reset_index(drop=True)
@@ -196,34 +189,32 @@ if uploaded_files:
                         ma_g1 = temp_ma[temp_ma['Thick_Num'] <= 0.60].copy()
                         son_g1 = temp_son[temp_son['Thick_Num'] <= 0.60].copy()
                         if not ma_g1.empty and not son_g1.empty:
-                            groups_to_compare.append(("Độ dày (Thickness) <= 0.60", ma_g1, son_g1))
+                            groups_to_compare.append(("Thickness <= 0.60", ma_g1, son_g1))
                             
                         ma_g2 = temp_ma[temp_ma['Thick_Num'] > 0.60].copy()
                         son_g2 = temp_son[temp_son['Thick_Num'] > 0.60].copy()
                         if not ma_g2.empty and not son_g2.empty:
-                            groups_to_compare.append(("Độ dày (Thickness) > 0.60", ma_g2, son_g2))
+                            groups_to_compare.append(("Thickness > 0.60", ma_g2, son_g2))
                     
                     if not groups_to_compare:
-                        st.info(f"ℹ️ Không tìm thấy dữ liệu phân chia độ dày cho {selected_label}. Chuyển sang chế độ phân tích tổng thể.")
-                        groups_to_compare.append(("Toàn bộ dữ liệu (Global)", temp_ma, temp_son))
+                        st.info(f"ℹ️ Thickness data not found for {selected_label}. Switching to global analysis.")
+                        groups_to_compare.append(("Global Data", temp_ma, temp_son))
 
                     for group_info in groups_to_compare:
                         group_name = group_info[0]
                         group_ma = group_info[1]
                         group_son = group_info[2]
 
-                        st.markdown(f"<h3 style='color: #D35400;'>📌 Phân tích: {group_name}</h3>", unsafe_allow_html=True)
+                        st.markdown(f"<h3 style='color: #D35400;'>📌 Analysis: {group_name}</h3>", unsafe_allow_html=True)
 
                         vals_ma_full = group_ma['val']
                         vals_son_full = group_son['val']
 
-                        # Tính giá trị trên lý thuyết (Theoretical values)
                         mean_ma = vals_ma_full.mean()
                         mean_son = vals_son_full.mean()
                         
                         delta = mean_son - mean_ma if pd.notnull(mean_son) and pd.notnull(mean_ma) else 0
 
-                        # Dùng trực tiếp df_son để quét limit, tránh truyền group df nếu không khớp index
                         son_lsl_series = get_limit_series(df_son, zh_key, "min", "管制", len(df_son))
                         son_usl_series = get_limit_series(df_son, zh_key, "max", "管制", len(df_son))
                         
@@ -241,7 +232,7 @@ if uploaded_files:
 
                         st.markdown(f"**🔄 Optimal Limits Recommendation**")
                         delta_data = [{
-                            "Phân loại": group_name,
+                            "Category": group_name,
                             "Galv. Theo. Value": format_num(mean_ma),
                             "Coating Theo. Value": format_num(mean_son),
                             "Shift (Δ)": format_num(delta),
@@ -300,7 +291,6 @@ if uploaded_files:
                             plt.tight_layout()
                             st.pyplot(fig_comp)
                             
-                        # Dọn dẹp RAM sau khi vẽ xong
                         plt.close(fig_comp)
                         gc.collect()
                         
@@ -336,7 +326,6 @@ if uploaded_files:
                 
                 df_raw = load_and_clean_data(file_obj)
                 
-                # QUAN TRỌNG: Chỉ copy các cột thực sự cần thiết thay vì df.copy() toàn bộ
                 necessary_cols = []
                 for k, v in metrics_map.items():
                     col = find_data_col(df_raw, v)
@@ -352,9 +341,6 @@ if uploaded_files:
                 
                 st.info(f"📂 Analyzing File: **{fname}** | Auto-detected: **{actual_line_type}**")
                 
-                # ==========================================
-                # XỬ LÝ VÀ HIỂN THỊ THỜI GIAN DỮ LIỆU
-                # ==========================================
                 time_col = next((c for c in df_raw.columns if "日期" in str(c) or "date" in str(c).lower() or "time" in str(c).lower()), None)
                 date_range_str = "Unknown Period"
                 if time_col:
@@ -364,12 +350,38 @@ if uploaded_files:
                 
                 st.markdown(f"**📅 Data Period:** `{date_range_str}`")
                 st.markdown("---")
-                # ==========================================
                 
                 if "用途碼" in df.columns:
                     usage_list = sorted(df["用途碼"].dropna().unique().tolist())
                     selected_usages = st.multiselect(f"Filter Usage Code ({line_label}):", options=usage_list, default=usage_list, key=f"usage_{fname}_{view_mode}")
                     df = df[df["用途碼"].isin(selected_usages)]
+
+                # ==========================================
+                # THICKNESS FILTER 
+                # ==========================================
+                if view_mode == "Process Analytics":
+                    thick_col_filter = next((c for c in df.columns if "厚度" in str(c) or "thickness" in str(c).lower()), None)
+                    if thick_col_filter:
+                        df['Thick_Num_Filter'] = pd.to_numeric(df[thick_col_filter], errors='coerce')
+                        valid_thick = df['Thick_Num_Filter'].dropna()
+                        
+                        if not valid_thick.empty:
+                            min_t = float(valid_thick.min())
+                            max_t = float(valid_thick.max())
+                            
+                            if min_t < max_t:
+                                c_f1, c_f2 = st.columns([1, 2]) 
+                                with c_f1:
+                                    selected_thick = st.slider(
+                                        f"Thickness Range ({line_label}):", 
+                                        min_value=min_t, 
+                                        max_value=max_t, 
+                                        value=(min_t, max_t), 
+                                        step=0.01, 
+                                        key=f"thick_slider_{fname}"
+                                    )
+                                df = df[(df['Thick_Num_Filter'] >= selected_thick[0]) & (df['Thick_Num_Filter'] <= selected_thick[1])]
+                # ==========================================
 
                 available = [k for k, v in metrics_map.items() if find_data_col(df, v)]
                 if not available:
@@ -413,7 +425,6 @@ if uploaded_files:
                                 mu_v = p_data.mean()
                                 sig_v = p_data.std(ddof=1) if n_count > 1 else 0
                                 
-                                # Quét limit trực tiếp từ df chính
                                 i_lsl_series = get_limit_series(df, zh_key, "min", "管制", len(df))
                                 i_usl_series = get_limit_series(df, zh_key, "max", "管制", len(df))
                                 
@@ -449,7 +460,7 @@ if uploaded_files:
                                 summary_data.append({
                                     "Parameter": selected_label, 
                                     "Thickness": g_name,
-                                    "N": n_count, "Mean": format_num(mu_v), "StdDev (σ)": format_num(sig_v),
+                                    "N": n_count, "Theo. Value": format_num(mu_v), "StdDev (σ)": format_num(sig_v),
                                     "Int LSL": format_num(i_lsl), "Int USL": format_num(i_usl), 
                                     "Cp": cp, "Ca": ca, "Cpk": cpk, 
                                     "Cpk Formula": formula, "Status": status
@@ -466,7 +477,6 @@ if uploaded_files:
                         zh_key = zh_map_global.get(short_key, short_key)
                         
                         if data_col:
-                            # Cắt giảm copy Dataframe để giảm RAM
                             temp_df = df[[data_col]].copy()
                             temp_df[data_col] = pd.to_numeric(temp_df[data_col], errors='coerce')
                             
@@ -499,7 +509,6 @@ if uploaded_files:
                                 tab_trend, tab_dist = st.tabs([f"📈 {selected_label} Trend", f"📊 {selected_label} Distribution"])
 
                                 with tab_trend:
-                                    # Thu gọn figsize để tăng tốc độ render (Matplotlib memory issue)
                                     fig_t, ax_t = plt.subplots(figsize=(11, 5.5)) 
                                     x_coords = np.arange(1, n+1)
 
@@ -518,7 +527,6 @@ if uploaded_files:
                                         if not any(item['name'] == name for item in label_dict[val]):
                                             label_dict[val].append({'name': name, 'color': color})
 
-                                    # 1. ĐƯỜNG GIỚI HẠN KHÁCH HÀNG
                                     if not cust_lsl_series.isna().all():
                                         for c_val in cust_lsl_series.dropna().unique():
                                             if c_val > 0: 
@@ -530,7 +538,6 @@ if uploaded_files:
                                                 ax_t.axhline(c_val, color="#00AA00", linestyle=":", linewidth=2.0, alpha=0.9)
                                                 add_to_label(c_val, "Cust USL", "#00AA00")
 
-                                    # 2. VẼ ĐƯỜNG MEAN & GIỚI HẠN NỘI BỘ 
                                     color_idx = 0
                                     for (lsl, usl), group in groups:
                                         c = THEME_COLORS[color_idx % len(THEME_COLORS)]
@@ -543,8 +550,8 @@ if uploaded_files:
                                         
                                         group_mean = group[data_col].mean()
                                         
-                                        ax_t.axhline(group_mean, color=c_mean, linestyle="-", linewidth=2.0, alpha=0.7, label="Group Mean" if color_idx==0 else None)
-                                        add_to_label(group_mean, "Mean", c_mean)
+                                        ax_t.axhline(group_mean, color=c_mean, linestyle="-", linewidth=2.0, alpha=0.7, label="Group Theo. Value" if color_idx==0 else None)
+                                        add_to_label(group_mean, "Theo. Value", c_mean)
                                         
                                         if lsl != -1: 
                                             ax_t.axhline(lsl, color=c_limit, linestyle="--", linewidth=2.0, alpha=1.0)
@@ -556,12 +563,10 @@ if uploaded_files:
                                         ax_t.scatter(x_coords[mask], plot_data[mask], color=c, s=40, edgecolor="black", linewidth=1.0, zorder=4, label=f"Data ({spec_txt})")
                                         color_idx += 1
 
-                                    # 3. HIGHLIGHT ĐIỂM LỖI
                                     mask_out = (plot_data < lower_bound) | (plot_data > upper_bound)
                                     if mask_out.any():
                                         ax_t.scatter(x_coords[mask_out], plot_data[mask_out], color="#FF0000", s=60, edgecolor="#800000", linewidth=1.5, zorder=6, label="Out of Limit")
 
-                                    # 4. CĂN TRỤC Y & LABEL CHỐNG ĐÈ
                                     valid_y = plot_data.dropna()
                                     ymin, ymax = valid_y.min(), valid_y.max()
                                     for val in label_dict.keys():
@@ -725,12 +730,12 @@ if uploaded_files:
                                     if not g2.empty: spc_groups.append(("Thickness > 0.60", g2))
                                     if not g_nan.empty: spc_groups.append(("Unknown Thickness", g_nan))
                                     
-                                    st.markdown(f"#### 📐 Bảng thông số Kiểm soát (Phân loại theo Độ dày)")
+                                    st.markdown(f"#### 📐 Control Parameters Table (By Thickness)")
                                 else:
                                     temp_spc_df = temp_spc_df.dropna(subset=[data_col]).reset_index(drop=True)
-                                    spc_groups.append(("Toàn bộ dữ liệu", temp_spc_df))
-                                    st.warning("⚠️ Không tìm thấy cột '訂單厚度' (Độ dày). Hệ thống đang tính chung cho toàn bộ dữ liệu.")
-                                    st.markdown(f"#### 📐 Bảng thông số Kiểm soát")
+                                    spc_groups.append(("Global Data", temp_spc_df))
+                                    st.warning("⚠️ 'Thickness' column not found. Calculating globally.")
+                                    st.markdown(f"#### 📐 Control Parameters Table")
 
                                 spc_stats = []
                                 for g_name, group in spc_groups:
@@ -743,9 +748,9 @@ if uploaded_files:
                                         g_iqr = g_q3 - g_q1
                                         
                                         spc_stats.append({
-                                            "Nhóm (Group)": g_name,
+                                            "Group": g_name,
                                             "N": g_n,
-                                            "Mean": format_num(g_mu),
+                                            "Theo. Value": format_num(g_mu),
                                             "Sigma": format_num(g_sig),
                                             "UCL (3σ)": format_num(g_mu + k_std*g_sig),
                                             "LCL (3σ)": format_num(g_mu - k_std*g_sig),
@@ -791,9 +796,9 @@ if uploaded_files:
                                 ax_i.set_title(f"I-Chart: Dynamic Control Limits ({selected_label})", pad=20)
                                 
                                 custom_lines = [
-                                    mlines.Line2D([], [], color='black', linestyle='-', lw=2.0, alpha=0.8, label='Group Mean'),
-                                    mlines.Line2D([], [], color='black', linestyle='--', lw=1.8, alpha=0.8, label=f'UCL/LCL ({k_std}σ)'),
-                                    mlines.Line2D([], [], color='black', linestyle=':', lw=2.5, alpha=0.8, label=f'UCL/LCL (IQR)')
+                                    mllines.Line2D([], [], color='black', linestyle='-', lw=2.0, alpha=0.8, label='Group Theo. Value'),
+                                    mllines.Line2D([], [], color='black', linestyle='--', lw=1.8, alpha=0.8, label=f'UCL/LCL ({k_std}σ)'),
+                                    mllines.Line2D([], [], color='black', linestyle=':', lw=2.5, alpha=0.8, label=f'UCL/LCL (IQR)')
                                 ]
                                 
                                 handles, labels = ax_i.get_legend_handles_labels()
@@ -811,7 +816,6 @@ if uploaded_files:
                                 st.download_button(label=f"📥 Download SPC Chart ({selected_label})", data=buf_i, file_name=f"SPC_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_spc_{fname}_{selected_label}")
                                 plt.close(fig_imr)
                                 
-                            # Dọn RAM lần cuối cho mỗi tab
                             gc.collect()
 else:
     st.info("👈 Please upload the production report to start.")
