@@ -687,7 +687,7 @@ if uploaded_files:
                                     
                                     bin_w = (plot_data.max() - plot_data.min()) / 20 if plot_data.max() > plot_data.min() else 1
                                     y_vals = norm.pdf(xs, safe_mu, safe_sigma) * n * bin_w
-                                    ax_pdf.plot(xs, y_vals, color="#111111", lw=3, label="Normal Fit")
+                                    ax_pdf.plot(xs, y_vals, color="#111111", lw=1.5, label="Normal Fit")
                                     ax_pdf.set_yticks([])
                                     
                                     lines_to_draw = []
