@@ -601,7 +601,8 @@ if uploaded_files:
                                         
                                         group_mean = group[data_col].mean()
                                         
-                                        ax_t.axhline(group_mean, color=c_mean, linestyle="-", linewidth=2.0, alpha=0.7, label="Group Theo. Value" if color_idx==0 else None)
+                                        # ĐÃ SỬA: "Group Theo. Value" thành "Mean Value"
+                                        ax_t.axhline(group_mean, color=c_mean, linestyle="-", linewidth=2.0, alpha=0.7, label="Mean Value" if color_idx==0 else None)
                                         add_to_label(group_mean, "Mean Value", c_mean)
                                         
                                         if lsl != -1: 
@@ -712,8 +713,12 @@ if uploaded_files:
                                         
                                         group_mean = group[data_col].mean()
                                         register_vline(group_mean, c_mean, "-", "Mean Value" if color_idx==0 else None)
-                                        if lsl != -1: register_vline(lsl, c_limit, "--", "Int LSL" if color_idx==0 else None)
-                                        if usl != -1: register_vline(usl, c_limit, "--", "Int USL" if color_idx==0 else None)
+                                        
+                                        # ĐÃ SỬA: Thêm điều kiện ẩn Int LSL/USL nếu là chuyền mạ (is_coating_line)
+                                        if not is_coating_line:
+                                            if lsl != -1: register_vline(lsl, c_limit, "--", "Int LSL" if color_idx==0 else None)
+                                            if usl != -1: register_vline(usl, c_limit, "--", "Int USL" if color_idx==0 else None)
+                                            
                                         color_idx += 1
 
                                     register_multiple(cust_lsl_series, "#00AA00", "-", "Cust LSL")
@@ -721,7 +726,7 @@ if uploaded_files:
 
                                     lines_to_draw.sort(key=lambda x: x['val'])
                                     x_range = x_max_fit - x_min_fit
-                                    min_dist = x_range * 0.15  
+                                    min_dist = x_range * 0.09  
                                     levels_last_x = [-np.inf] * 6  
                                     trans = ax_d.get_xaxis_transform()
                                     
@@ -737,16 +742,16 @@ if uploaded_files:
                                                 levels_last_x[i] = val
                                                 break
                                         else:
-                                            assigned_level = 3
-                                            levels_last_x[3] = val
+                                            assigned_level = 5
+                                            levels_last_x[5] = val
                                         
-                                        y_pos = 1.02 + (assigned_level * 0.05)
+                                        y_pos = 1.02 + (assigned_level * 0.08)
                                         bbox_props = dict(boxstyle="round,pad=0.2", fc="white", ec=c, alpha=0.9, lw=1.5)
                                         
                                         ax_d.text(val, y_pos, f"{val:.1f}", color=c, ha='center', va='bottom', 
                                                 transform=trans, fontweight='bold', fontsize=10, bbox=bbox_props)
                                     
-                                    ax_d.set_title(f"{selected_label} Distribution (N={n})",pad=35,fontweight="bold")  
+                                    ax_d.set_title(f"{selected_label} Distribution (N={n})", pad=110) 
                                     
                                     handles, labels = ax_d.get_legend_handles_labels()
                                     handles_pdf, labels_pdf = ax_pdf.get_legend_handles_labels()
