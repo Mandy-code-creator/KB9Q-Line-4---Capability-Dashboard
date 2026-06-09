@@ -101,21 +101,37 @@ def export_to_word(figures, titles):
     out_io.seek(0)
     return out_io
 
-# HÀM MỚI: TÌM VÀ LÀM SẠCH DỮ LIỆU ĐỘ DÀY (CHỐNG LỖI)
+# HÀM MỚI: TÌM VÀ LÀM SẠCH DỮ LIỆU ĐỘ DÀY (THÔNG MINH HƠN)
 def get_clean_thickness(df):
     thick_col = None
-    # Ưu tiên tìm chính xác các cột liên quan đến độ dày, tránh cột dung sai "公差"
-    for kw in ["訂單厚度", "thickness", "thick", "độ dày", "厚度"]:
+    
+    # 1. Ưu tiên số 1: Tìm chính xác các cột độ dày chuẩn xác nhất
+    priority_keywords = ["訂單厚度", "order thickness", "目標厚度", "target thickness"]
+    for kw in priority_keywords:
         for c in df.columns:
-            if kw in str(c).lower() and "公差" not in str(c): 
+            if kw.lower() in str(c).lower():
                 thick_col = c
                 break
         if thick_col: break
+        
+    # 2. Ưu tiên số 2: Nếu không tìm thấy cột chuẩn, tìm theo từ khóa rộng nhưng LOẠI TRỪ các cột nhiễu
+    if not thick_col:
+        exclude_keywords = ["公差", "套筒", "sleeve", "tolerance", "建議", "suggested"]
+        for kw in ["厚度", "thickness", "thick", "độ dày"]:
+            for c in df.columns:
+                c_str = str(c).lower()
+                # Kiểm tra có chứa từ khóa VÀ không chứa từ bị cấm
+                if kw in c_str and not any(ex in c_str for ex in exclude_keywords):
+                    thick_col = c
+                    break
+            if thick_col: break
     
+    # 3. Trích xuất dữ liệu dạng số
     if thick_col:
         # Sử dụng RegEx để trích xuất chữ số (vd: "0.6mm" -> 0.6)
         num_series = pd.to_numeric(df[thick_col].astype(str).str.extract(r'(\d+\.?\d*)')[0], errors='coerce')
         return thick_col, num_series
+        
     return None, pd.Series(dtype=float)
 
 # =========================================================================
