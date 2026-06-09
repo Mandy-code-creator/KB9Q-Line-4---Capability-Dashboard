@@ -765,14 +765,16 @@ if uploaded_files:
                                     
                             # ---------------------------------------------------------                            
                             # ---------------------------------------------------------
+                            # ---------------------------------------------------------
                             # SUB-VIEW: SPC CONTROL CHARTS (I-MR)
                             # ---------------------------------------------------------
                             elif view_mode == "SPC Control Charts (I-MR)":
-                                spc_groups = []
+                                # Dữ liệu 'df' này đã được lọc qua thanh trượt ở phần trên rồi
                                 temp_spc_df = df[[data_col]].copy()
                                 temp_spc_df[data_col] = pd.to_numeric(temp_spc_df[data_col], errors='coerce')
                                 temp_spc_df = temp_spc_df.dropna(subset=[data_col]).reset_index(drop=True)
                                 
+                                spc_groups = []
                                 if not temp_spc_df.empty:
                                     spc_groups.append(("Filtered Data", temp_spc_df))
                                     
@@ -809,7 +811,6 @@ if uploaded_files:
                                 ax_i.plot(x_coords_spc, temp_spc_df[data_col], color="#CFD8DC", linestyle="-", linewidth=1.5, zorder=1)
                                 
                                 color_idx = 0
-                                
                                 for g_name, group in spc_groups:
                                     c = THEME_COLORS[color_idx % len(THEME_COLORS)]
                                     mask = temp_spc_df.index.isin(group.index)
@@ -822,14 +823,11 @@ if uploaded_files:
                                         g_iqr = g_q3 - g_q1
                                         
                                         ax_i.scatter(x_coords_spc[mask], temp_spc_df[data_col][mask], color=c, s=40, edgecolor="black", linewidth=1.0, zorder=3, label=f"Data ({g_name})")
-                                        
                                         ax_i.axhline(g_mu, color=c, linestyle="-", linewidth=2.0, alpha=0.8)
                                         ax_i.axhline(g_mu + k_std*g_sig, color=c, linestyle="--", linewidth=1.8, alpha=0.8)
                                         ax_i.axhline(g_mu - k_std*g_sig, color=c, linestyle="--", linewidth=1.8, alpha=0.8)
-                                        
                                         ax_i.axhline(g_q3 + k_iqr*g_iqr, color=c, linestyle=":", linewidth=2.5, alpha=0.8)
                                         ax_i.axhline(g_q1 - k_iqr*g_iqr, color=c, linestyle=":", linewidth=2.5, alpha=0.8)
-
                                     color_idx += 1
                                 
                                 ax_i.set_xlabel("Coil Sequence")
@@ -838,7 +836,7 @@ if uploaded_files:
                                 
                                 custom_lines = [
                                     mlines.Line2D([], [], color='black', linestyle='-', lw=2.0, alpha=0.8, label='Mean'),
-                                    mlines.Line2D([], [], color='black', linestyle='--', lw=1.8, alpha=0.8, label=f'UCL/LCL ({k_std}σ)'),
+                                    mlines.Line2D([], [], color='black', linestyle='--', lw=1.8, alpha=0.8, label=f'Mill Range ({k_std}σ)'),
                                     mlines.Line2D([], [], color='black', linestyle=':', lw=2.5, alpha=0.8, label=f'UCL/LCL (IQR)')
                                 ]
                                 
@@ -857,7 +855,6 @@ if uploaded_files:
                                 buf_i = export_to_word([fig_imr], [f"SPC I-Chart Analysis - {selected_label}"])
                                 st.download_button(label=f"📥 Download SPC Chart ({selected_label})", data=buf_i, file_name=f"SPC_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_spc_{fname}_{selected_label}")
                                 plt.close(fig_imr)
-                                
                             gc.collect()
 else:
     st.info("👈 Please upload the production report to start.")
