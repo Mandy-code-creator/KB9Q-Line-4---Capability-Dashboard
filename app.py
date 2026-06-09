@@ -596,23 +596,21 @@ if uploaded_files:
                                         c_mean = c if is_multi_group else "#0055FF"
                                         c_limit = c if is_multi_group else "#FF0000"
                                         
-                                        mask = temp_plot_df.index.isin(group.index)
-                                        spec_txt = format_spec(lsl, usl)
-                                        
                                         group_mean = group[data_col].mean()
+                                        register_vline(group_mean, c_mean, "-", "Mean Value" if color_idx==0 else None)
                                         
-                                        # ĐÃ SỬA: "Group Theo. Value" thành "Mean Value"
-                                        ax_t.axhline(group_mean, color=c_mean, linestyle="-", linewidth=2.0, alpha=0.7, label="Mean Value" if color_idx==0 else None)
-                                        add_to_label(group_mean, "Mean Value", c_mean)
-                                        
-                                        if lsl != -1: 
-                                            ax_t.axhline(lsl, color=c_limit, linestyle="--", linewidth=2.0, alpha=1.0)
-                                            add_to_label(lsl, "Int LSL", c_limit)
-                                        if usl != -1: 
-                                            ax_t.axhline(usl, color=c_limit, linestyle="--", linewidth=2.0, alpha=1.0)
-                                            add_to_label(usl, "Int USL", c_limit)
+                                        if not is_coating_line:
+                                            # Nếu KHÔNG phải chuyền mạ: Vẽ đường Int LSL / Int USL bình thường
+                                            if lsl != -1: register_vline(lsl, c_limit, "--", "Int LSL" if color_idx==0 else None)
+                                            if usl != -1: register_vline(usl, c_limit, "--", "Int USL" if color_idx==0 else None)
+                                        else:
+                                            # Nếu LÀ chuyền mạ: Ẩn Int LSL/USL, vẽ đường 3-Sigma (Mean ± 3*Sigma)
+                                            lcl_3sigma = group_mean - 3 * safe_sigma
+                                            ucl_3sigma = group_mean + 3 * safe_sigma
+                                            # Dùng nét đứt gạch (-.) để phân biệt với nét đứt (--) của giới hạn thông thường
+                                            register_vline(lcl_3sigma, c_limit, "-.", "-3 Sigma" if color_idx==0 else None)
+                                            register_vline(ucl_3sigma, c_limit, "-.", "+3 Sigma" if color_idx==0 else None)
                                             
-                                        ax_t.scatter(x_coords[mask], plot_data[mask], color=c, s=40, edgecolor="black", linewidth=1.0, zorder=4, label=f"Data ({spec_txt})")
                                         color_idx += 1
 
                                     mask_out = (plot_data < lower_bound) | (plot_data > upper_bound)
