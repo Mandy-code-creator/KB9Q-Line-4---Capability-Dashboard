@@ -802,7 +802,7 @@ if uploaded_files:
                                     selected_thick = st.slider(
                                         f"🎚️ Thickness Range ({line_label}):", 
                                         min_value=min_t, max_value=max_t, value=(min_t, max_t), step=0.01,
-                                        key=f"spc_slider_{fname}_{selected_label}"
+                                        key=f"spc_slider_{fname}_{data_col}_{selected_label}" # Đã thêm data_col để chống trùng
                                     )
                                     temp_spc_df = temp_spc_df[
                                         (temp_spc_df['Thick_Num'].isna()) | 
@@ -812,15 +812,14 @@ if uploaded_files:
                                 temp_spc_df = temp_spc_df.dropna(subset=[data_col]).reset_index(drop=True)
                                 spc_groups = [("Filtered Data", temp_spc_df)] if not temp_spc_df.empty else []
                                     
-                                # TÙY CHỈNH HỆ SỐ KIỂM SOÁT
+                                # TÙY CHỈNH HỆ SỐ KIỂM SOÁT (Đã fix lỗi Duplicate Key)
                                 st.markdown(f"#### ⚙️ Control Limit Multipliers")
                                 col_k1, col_k2 = st.columns(2)
                                 with col_k1:
-                                    # Mặc định là 3.0 (phù hợp với quy tắc 3-Sigma)
-                                    user_k_std = st.number_input("Standard Multiplier (k × Sigma):", min_value=1.0, max_value=6.0, value=3.0, step=0.5, key=f"k_std_input_{selected_label}")
+                                    # Sử dụng tổ hợp fname + data_col + selected_label làm key siêu độc nhất
+                                    user_k_std = st.number_input("Standard Multiplier (k × Sigma):", min_value=1.0, max_value=6.0, value=3.0, step=0.5, key=f"k_std_{fname}_{data_col}_{selected_label}")
                                 with col_k2:
-                                    # Mặc định là 1.5 (phù hợp với công thức outlier chuẩn của Tukey)
-                                    user_k_iqr = st.number_input("IQR Multiplier (k × IQR):", min_value=1.0, max_value=4.0, value=1.5, step=0.1, key=f"k_iqr_input_{selected_label}")
+                                    user_k_iqr = st.number_input("IQR Multiplier (k × IQR):", min_value=1.0, max_value=4.0, value=1.5, step=0.1, key=f"k_iqr_{fname}_{data_col}_{selected_label}")
 
                                 st.markdown(f"#### 📐 Control Parameters Table (Comparison)")
 
@@ -850,7 +849,7 @@ if uploaded_files:
                                             "Category": g_name, 
                                             "N": g_n,
                                             "Target Goal": target_goal,
-                                            "Mean (μ)": format_num(g_mu), 
+                                            "Theoretical Value (μ)": format_num(g_mu), 
                                             "Sigma (MR)": format_num(g_sig_spc),
                                             f"UCL (μ + {user_k_std}σ)": format_num(ucl_std),
                                             f"LCL (μ - {user_k_std}σ)": format_num(lcl_std),
@@ -873,8 +872,7 @@ if uploaded_files:
                                     
                                     ax_i.scatter(np.arange(1, len(temp_spc_df)+1), temp_spc_df[data_col], color="#00BFFF", s=40, edgecolor="black", zorder=3)
                                     
-                                    ax_i.axhline(g_mu, color="#0055FF", linestyle="-", linewidth=2.0, label='Mean')
-                                    # Vẽ giới hạn biểu đồ dựa trên số K người dùng nhập
+                                    ax_i.axhline(g_mu, color="#0055FF", linestyle="-", linewidth=2.0, label='Theoretical Value')
                                     ax_i.axhline(g_mu + user_k_std*g_sig_spc, color="#FF0000", linestyle="--", linewidth=1.8, label=f'Upper Limit ({user_k_std}σ)')
                                     ax_i.axhline(g_mu - user_k_std*g_sig_spc, color="#FF0000", linestyle="--", linewidth=1.8, label=f'Lower Limit ({user_k_std}σ)')
                                 
@@ -885,7 +883,7 @@ if uploaded_files:
                                 apply_full_border(ax_i); plt.tight_layout(rect=[0, 0, 0.85, 1]); st.pyplot(fig_imr)
                                 
                                 buf_i = export_to_word([fig_imr], [f"SPC I-Chart Analysis - {selected_label}"])
-                                st.download_button(label=f"📥 Download SPC Chart ({selected_label})", data=buf_i, file_name=f"SPC_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_spc_{fname}_{selected_label}")
+                                st.download_button(label=f"📥 Download SPC Chart ({selected_label})", data=buf_i, file_name=f"SPC_Report_{selected_label}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_spc_{fname}_{data_col}_{selected_label}")
                                 plt.close(fig_imr)
                                 
                             gc.collect()
