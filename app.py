@@ -819,19 +819,30 @@ if uploaded_files:
                                 for g_name, group in spc_groups:
                                     g_data = group[data_col].dropna()
                                     if len(g_data) > 1:
-                                        g_n, g_mu, g_sig = len(g_data), g_data.mean(), g_data.std(ddof=1)
+                                        g_n = len(g_data)
+                                        g_mu = g_data.mean()
+                                        g_sig = g_data.std(ddof=1)
                                         g_q1, g_q3 = g_data.quantile(0.25), g_data.quantile(0.75)
                                         g_iqr = g_q3 - g_q1
+                                        
+                                        # Update target_goal logic here if pulling from a specific column
+                                        target_goal = "-" 
+                                        
                                         spc_stats.append({
-                                            "Category": g_name, "N": g_n, "Mean": format_num(g_mu), "Sigma": format_num(g_sig),
+                                            "Category": g_name, 
+                                            "N": g_n,
+                                            "Target Goal": target_goal,
+                                            "Theo. Value": format_num(g_mu), 
+                                            "Sigma": format_num(g_sig),
                                             f"Mill Range Upper ({k_std}σ)": format_num(g_mu + k_std*g_sig),
                                             f"Mill Range Lower ({k_std}σ)": format_num(g_mu - k_std*g_sig),
                                             "IQR": format_num(g_iqr),
                                             "UCL (IQR)": format_num(g_q3 + k_iqr*g_iqr),
                                             "LCL (IQR)": format_num(g_q1 - k_iqr*g_iqr)
                                         })
-                                if spc_stats: st.dataframe(pd.DataFrame(spc_stats), hide_index=True, use_container_width=True)
-
+                                        
+                                if spc_stats: 
+                                    st.dataframe(pd.DataFrame(spc_stats), hide_index=True, use_container_width=True)
                                 # 3. CHART PLOTTING
                                 fig_imr, ax_i = plt.subplots(figsize=(11, 5.5)) 
                                 ax_i.plot(np.arange(1, len(temp_spc_df)+1), temp_spc_df[data_col], color="#CFD8DC", linestyle="-", linewidth=1.5, zorder=1)
