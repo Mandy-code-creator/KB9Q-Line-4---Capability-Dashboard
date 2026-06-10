@@ -542,7 +542,7 @@ if uploaded_files:
                                 cust_usl_series = get_limit_series(df, zh_key, "max", "客戶要求", len(df)).loc[temp_df[data_col].notna()].reset_index(drop=True)
 
                                 if is_coating_line and short_key == "YPE":
-                                    int_lsl_series = pd.Series([4.0] * n)
+                                    int_lsl_series = pd.Series([4.0] * len(plot_data))
                                 
                                 temp_plot_df = plot_df.copy()
                                 temp_plot_df['LSL_temp'] = int_lsl_series.fillna(-1).values
@@ -551,27 +551,31 @@ if uploaded_files:
                                 groups = temp_plot_df.groupby(['LSL_temp', 'USL_temp'])
                                 is_multi_group = len(groups) > 1
                                 
-                                calc_data = plot_data
+                                # ĐÃ SỬA: Loại bỏ NA và chuỗi trống trước khi tính Mean/Sigma
+                                calc_data = pd.to_numeric(plot_data, errors='coerce').dropna()
+                                valid_n = len(calc_data)
+                                
                                 mu = calc_data.mean()
                                 sigma_fixed = calc_data.std(ddof=1)
                                 safe_sigma = sigma_fixed if pd.notnull(sigma_fixed) and sigma_fixed > 0 else 1
-                                safe_mu = mu if pd.notnull(mu) else plot_data.mean()
+                                safe_mu = mu if pd.notnull(mu) else 0
 
                                 tab_trend, tab_dist = st.tabs([f"📈 {selected_label} Trend", f"📊 {selected_label} Distribution"])
 
                                 with tab_trend:
                                     fig_t, ax_t = plt.subplots(figsize=(11, 5.5)) 
-                                    x_coords = np.arange(1, n+1)
+                                    n_total = len(plot_data)
+                                    x_coords = np.arange(1, n_total + 1)
 
                                     if is_coating_line:
-                                        lower_bound = pd.Series([safe_mu - 3 * safe_sigma] * n)
-                                        upper_bound = pd.Series([safe_mu + 3 * safe_sigma] * n)
+                                        lower_bound = pd.Series([safe_mu - 3 * safe_sigma] * n_total)
+                                        upper_bound = pd.Series([safe_mu + 3 * safe_sigma] * n_total)
                                     elif not int_lsl_series.isna().all() and not int_usl_series.isna().all():
                                         lower_bound = int_lsl_series.ffill().bfill()
                                         upper_bound = int_usl_series.ffill().bfill()
                                     else:
-                                        lower_bound = pd.Series([-np.inf] * n)
-                                        upper_bound = pd.Series([np.inf] * n)
+                                        lower_bound = pd.Series([-np.inf] * n_total)
+                                        upper_bound = pd.Series([np.inf] * n_total)
 
                                     label_dict = {}
                                     def add_to_label(val, name, color):
@@ -600,7 +604,10 @@ if uploaded_files:
                                         
                                         mask = temp_plot_df.index.isin(group.index)
                                         spec_txt = format_spec(lsl, usl)
-                                        group_mean = group[data_col].mean()
+                                        
+                                        # Tính trung bình dựa trên dữ liệu hợp lệ của từng group
+                                        group_clean = pd.to_numeric(group[data_col], errors='coerce').dropna()
+                                        group_mean = group_clean.mean() if len(group_clean) > 0 else safe_mu
                                         
                                         ax_t.axhline(group_mean, color=c_mean, linestyle="-", linewidth=2.0, alpha=0.7, label="Mean Value" if color_idx==0 else None)
                                         add_to_label(group_mean, "Mean Value", c_mean)
@@ -622,21 +629,21 @@ if uploaded_files:
                                         ax_t.scatter(x_coords[mask], plot_data[mask], color=c, s=40, edgecolor="black", linewidth=1.0, zorder=4, label=f"Data ({spec_txt})")
                                         color_idx += 1
 
-                                    mask_out = (plot_data < lower_bound) | (plot_data > upper_bound)
+                                    mask_out = (pd.to_numeric(plot_data, errors='coerce') < lower_bound) | (pd.to_numeric(plot_data, errors='coerce') > upper_bound)
                                     if mask_out.any():
                                         ax_t.scatter(x_coords[mask_out], plot_data[mask_out], color="#FF0000", s=60, edgecolor="#800000", linewidth=1.5, zorder=6, label="Out of Limit")
 
-                                    valid_y = plot_data.dropna()
-                                    ymin, ymax = valid_y.min(), valid_y.max()
-                                    for val in label_dict.keys():
-                                        ymin, ymax = min(ymin, val), max(ymax, val)
-                                            
-                                    y_range = ymax - ymin if ymax > ymin else 10
-                                    ax_t.set_ylim(ymin - y_range*0.12, ymax + y_range*0.12)
-                                    ax_t.set_xlim(0, n * 1.18)
+                                    ymin, ymax = calc_data.min(), calc_data.max()
+                                    if pd.notna(ymin) and pd.notna(ymax):
+                                        for val in label_dict.keys():
+                                            ymin, ymax = min(ymin, val), max(ymax, val)
+                                                
+                                        y_range = ymax - ymin if ymax > ymin else 10
+                                        ax_t.set_ylim(ymin - y_range*0.12, ymax + y_range*0.12)
+                                    ax_t.set_xlim(0, n_total * 1.18)
 
                                     sorted_vals = sorted(label_dict.keys())
-                                    min_y_dist = y_range * 0.05  
+                                    min_y_dist = (y_range * 0.05) if 'y_range' in locals() else 1 
                                     last_y = -np.inf
                                     
                                     for val in sorted_vals:
@@ -647,12 +654,12 @@ if uploaded_files:
                                         y_draw = val
                                         if y_draw - last_y < min_y_dist: y_draw = last_y + min_y_dist
                                             
-                                        ax_t.plot([n, n + (n*0.02)], [val, y_draw], color="black", linestyle="-", lw=1.0, alpha=0.4)
+                                        ax_t.plot([n_total, n_total + (n_total*0.02)], [val, y_draw], color="black", linestyle="-", lw=1.0, alpha=0.4)
                                         bbox = dict(boxstyle="round,pad=0.3", fc="#FFFFFF", ec=main_color, alpha=0.95, lw=1.5)
-                                        ax_t.text(n + (n*0.025), y_draw, f"{names_str}: {val:.1f}", color=main_color, va='center', ha='left', fontsize=9, bbox=bbox, fontweight='bold')
+                                        ax_t.text(n_total + (n_total*0.025), y_draw, f"{names_str}: {val:.1f}", color=main_color, va='center', ha='left', fontsize=9, bbox=bbox, fontweight='bold')
                                         last_y = y_draw
 
-                                    ax_t.set_xlabel("Coil Sequence"); ax_t.set_ylabel(f"{selected_label} Value"); ax_t.set_title(f"{selected_label} Trend Analysis (N={n})", pad=20)
+                                    ax_t.set_xlabel("Coil Sequence"); ax_t.set_ylabel(f"{selected_label} Value"); ax_t.set_title(f"{selected_label} Trend Analysis (N={valid_n})", pad=20)
                                     
                                     handles, labels = ax_t.get_legend_handles_labels()
                                     by_label = dict(zip(labels, handles))
@@ -670,21 +677,28 @@ if uploaded_files:
                                     hist_data, hist_labels = [], []
                                     color_idx = 0
                                     for (lsl, usl), group in groups:
-                                        hist_data.append(group[data_col].values)
-                                        hist_labels.append(f"Data ({format_spec(lsl, usl)})")
-                                        color_idx += 1
+                                        # ĐÃ SỬA: Loại bỏ NA/Empty trước khi đưa vào biểu đồ Histogram
+                                        clean_group = pd.to_numeric(group[data_col], errors='coerce').dropna().values
+                                        if len(clean_group) > 0:
+                                            hist_data.append(clean_group)
+                                            hist_labels.append(f"Data ({format_spec(lsl, usl)})")
+                                            color_idx += 1
                                         
-                                    if is_multi_group: ax_d.hist(hist_data, bins=20, stacked=True, density=False, alpha=0.8, edgecolor="black", label=hist_labels, color=THEME_COLORS[:len(hist_data)])
-                                    else: ax_d.hist(plot_data, bins=20, density=False, alpha=0.6, color="#0055FF", edgecolor="black", label="Data")
+                                    if is_multi_group and len(hist_data) > 0: 
+                                        ax_d.hist(hist_data, bins=20, stacked=True, density=False, alpha=0.8, edgecolor="black", label=hist_labels, color=THEME_COLORS[:len(hist_data)])
+                                    elif len(calc_data) > 0: 
+                                        ax_d.hist(calc_data.values, bins=20, density=False, alpha=0.6, color="#0055FF", edgecolor="black", label="Data")
 
                                     ax_d.yaxis.set_major_locator(MaxNLocator(integer=True))
                                     ax_d.set_xlabel(f"{selected_label} Value"); ax_d.set_ylabel("Coil Count")
                                     
                                     ax_pdf = ax_d.twinx()
-                                    x_min_fit, x_max_fit = min(plot_data.min(), safe_mu - 4*safe_sigma), max(plot_data.max(), safe_mu + 4*safe_sigma)
-                                    xs = np.linspace(x_min_fit, x_max_fit, 500)
-                                    bin_w = (plot_data.max() - plot_data.min()) / 20 if plot_data.max() > plot_data.min() else 1
-                                    ax_pdf.plot(xs, norm.pdf(xs, safe_mu, safe_sigma) * n * bin_w, color="#111111", lw=1.5, label="Normal Fit")
+                                    if len(calc_data) > 0:
+                                        x_min_fit, x_max_fit = min(calc_data.min(), safe_mu - 4*safe_sigma), max(calc_data.max(), safe_mu + 4*safe_sigma)
+                                        xs = np.linspace(x_min_fit, x_max_fit, 500)
+                                        bin_w = (calc_data.max() - calc_data.min()) / 20 if calc_data.max() > calc_data.min() else 1
+                                        y_vals = norm.pdf(xs, safe_mu, safe_sigma) * valid_n * bin_w
+                                        ax_pdf.plot(xs, y_vals, color="#111111", lw=1.5, label="Normal Fit")
                                     ax_pdf.set_yticks([])
                                     
                                     lines_to_draw = []
@@ -704,7 +718,10 @@ if uploaded_files:
                                         c_mean = c if is_multi_group else "#0055FF"
                                         c_limit = c if is_multi_group else "#FF0000"
                                         
-                                        group_mean = group[data_col].mean()
+                                        # Lấy mean hợp lệ
+                                        group_clean = pd.to_numeric(group[data_col], errors='coerce').dropna()
+                                        group_mean = group_clean.mean() if len(group_clean) > 0 else safe_mu
+                                        
                                         register_vline(group_mean, c_mean, "-", "Mean Value" if color_idx==0 else None)
                                         
                                         if not is_coating_line:
@@ -720,7 +737,11 @@ if uploaded_files:
                                     register_multiple(cust_usl_series, "#00AA00", "-", "Cust USL")
 
                                     lines_to_draw.sort(key=lambda x: x['val'])
-                                    min_dist = (x_max_fit - x_min_fit) * 0.09  
+                                    if len(calc_data) > 0:
+                                        min_dist = (x_max_fit - x_min_fit) * 0.09  
+                                    else:
+                                        min_dist = 1
+                                        
                                     levels_last_x = [-np.inf] * 6  
                                     trans = ax_d.get_xaxis_transform()
                                     
@@ -741,7 +762,7 @@ if uploaded_files:
                                         bbox_props = dict(boxstyle="round,pad=0.2", fc="white", ec=c, alpha=0.9, lw=1.5)
                                         ax_d.text(val, y_pos, f"{val:.1f}", color=c, ha='center', va='bottom', transform=trans, fontweight='bold', fontsize=10, bbox=bbox_props)
                                     
-                                    ax_d.set_title(f"{selected_label} Distribution (N={n})", pad=35, fontweight="bold")  
+                                    ax_d.set_title(f"{selected_label} Distribution (N={valid_n})", pad=35, fontweight="bold")  
                                     
                                     handles, labels = ax_d.get_legend_handles_labels()
                                     handles_pdf, labels_pdf = ax_pdf.get_legend_handles_labels()
