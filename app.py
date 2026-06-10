@@ -842,7 +842,7 @@ if uploaded_files:
                                             "Category": g_name, 
                                             "N": g_n,
                                             "Target Goal": target_goal,
-                                            "Theo. Value": format_num(g_mu), 
+                                            "Mean Value": format_num(g_mu), 
                                             "Sigma (MR)": format_num(g_sig_spc), # Hiện Sigma chuẩn SPC
                                             f"Mill Range Upper ({k_std}σ)": format_num(g_mu + k_std*g_sig_spc),
                                             f"Mill Range Lower ({k_std}σ)": format_num(g_mu - k_std*g_sig_spc),
