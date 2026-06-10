@@ -785,15 +785,13 @@ if uploaded_files:
                                     
                             # ---------------------------------------------------------                            
                             # ---------------------------------------------------------
-                            # ---------------------------------------------------------
                             # SUB-VIEW: SPC CONTROL CHARTS (I-MR)
                             # ---------------------------------------------------------
                             elif view_mode == "SPC Control Charts (I-MR)":
-                                # 1. RE-FILTERING LOGIC (Ensure Slider is always active here)
+                                # 1. RE-FILTERING LOGIC
                                 thick_col, thick_series = get_clean_thickness(df)
                                 temp_spc_df = df[[data_col]].copy()
                                 
-                                # Loại bỏ dữ liệu trống và giá trị <= 0
                                 temp_spc_df[data_col] = pd.to_numeric(temp_spc_df[data_col], errors='coerce')
                                 temp_spc_df = temp_spc_df[temp_spc_df[data_col] > 0]
                                 
@@ -801,7 +799,6 @@ if uploaded_files:
                                     temp_spc_df['Thick_Num'] = thick_series
                                     min_t, max_t = float(temp_spc_df['Thick_Num'].min()), float(temp_spc_df['Thick_Num'].max())
                                     
-                                    # This slider will always show when you are in SPC mode
                                     selected_thick = st.slider(
                                         f"🎚️ Thickness Range ({line_label}):", 
                                         min_value=min_t, max_value=max_t, value=(min_t, max_t), step=0.01,
@@ -815,7 +812,17 @@ if uploaded_files:
                                 temp_spc_df = temp_spc_df.dropna(subset=[data_col]).reset_index(drop=True)
                                 spc_groups = [("Filtered Data", temp_spc_df)] if not temp_spc_df.empty else []
                                     
-                                st.markdown(f"#### 📐 Control Parameters Table")
+                                # TÙY CHỈNH HỆ SỐ KIỂM SOÁT
+                                st.markdown(f"#### ⚙️ Control Limit Multipliers")
+                                col_k1, col_k2 = st.columns(2)
+                                with col_k1:
+                                    # Mặc định là 3.0 (phù hợp với quy tắc 3-Sigma)
+                                    user_k_std = st.number_input("Standard Multiplier (k × Sigma):", min_value=1.0, max_value=6.0, value=3.0, step=0.5, key=f"k_std_input_{selected_label}")
+                                with col_k2:
+                                    # Mặc định là 1.5 (phù hợp với công thức outlier chuẩn của Tukey)
+                                    user_k_iqr = st.number_input("IQR Multiplier (k × IQR):", min_value=1.0, max_value=4.0, value=1.5, step=0.1, key=f"k_iqr_input_{selected_label}")
+
+                                st.markdown(f"#### 📐 Control Parameters Table (Comparison)")
 
                                 # 2. DATA CALCULATION & TABLE
                                 spc_stats = []
@@ -825,16 +832,17 @@ if uploaded_files:
                                         g_n = len(g_data)
                                         g_mu = g_data.mean()
                                         
-                                        # THUẬT TOÁN SPC CHUẨN: Ước lượng Sigma qua Moving Range
-                                        moving_range = g_data.diff().abs() # Khoảng cách giữa 2 điểm liên tiếp
-                                        mr_mean = moving_range.mean()      # Trung bình MR
-                                        g_sig_spc = mr_mean / 1.128        # Sigma chuẩn của biểu đồ I-MR
+                                        # Phương pháp Standard (Sử dụng Moving Range để tính Sigma cho I-Chart)
+                                        moving_range = g_data.diff().abs()
+                                        g_sig_spc = moving_range.mean() / 1.128
+                                        ucl_std = g_mu + user_k_std * g_sig_spc
+                                        lcl_std = g_mu - user_k_std * g_sig_spc
                                         
-                                        # Giữ lại std() thông thường nếu bạn vẫn muốn hiển thị cho IQR
-                                        g_sig_overall = g_data.std(ddof=1) 
-                                        
+                                        # Phương pháp IQR
                                         g_q1, g_q3 = g_data.quantile(0.25), g_data.quantile(0.75)
                                         g_iqr = g_q3 - g_q1
+                                        ucl_iqr = g_q3 + user_k_iqr * g_iqr
+                                        lcl_iqr = g_q1 - user_k_iqr * g_iqr
                                         
                                         target_goal = format_num(g_data.median())
                                         
@@ -842,13 +850,13 @@ if uploaded_files:
                                             "Category": g_name, 
                                             "N": g_n,
                                             "Target Goal": target_goal,
-                                            "Mean Value": format_num(g_mu), 
-                                            "Sigma (MR)": format_num(g_sig_spc), # Hiện Sigma chuẩn SPC
-                                            f"Mill Range Upper ({k_std}σ)": format_num(g_mu + k_std*g_sig_spc),
-                                            f"Mill Range Lower ({k_std}σ)": format_num(g_mu - k_std*g_sig_spc),
+                                            "Mean (μ)": format_num(g_mu), 
+                                            "Sigma (MR)": format_num(g_sig_spc),
+                                            f"UCL (μ + {user_k_std}σ)": format_num(ucl_std),
+                                            f"LCL (μ - {user_k_std}σ)": format_num(lcl_std),
                                             "IQR": format_num(g_iqr),
-                                            "UCL (IQR)": format_num(g_q3 + k_iqr*g_iqr),
-                                            "LCL (IQR)": format_num(g_q1 - k_iqr*g_iqr)
+                                            f"UCL (Q3 + {user_k_iqr}×IQR)": format_num(ucl_iqr),
+                                            f"LCL (Q1 - {user_k_iqr}×IQR)": format_num(lcl_iqr)
                                         })
                                         
                                 if spc_stats: 
@@ -860,31 +868,15 @@ if uploaded_files:
                                 
                                 if spc_groups:
                                     g_mu = temp_spc_df[data_col].mean()
-                                    
-                                    # Áp dụng Sigma chuẩn để vẽ biểu đồ
                                     moving_range = temp_spc_df[data_col].diff().abs()
                                     g_sig_spc = moving_range.mean() / 1.128
                                     
                                     ax_i.scatter(np.arange(1, len(temp_spc_df)+1), temp_spc_df[data_col], color="#00BFFF", s=40, edgecolor="black", zorder=3)
                                     
                                     ax_i.axhline(g_mu, color="#0055FF", linestyle="-", linewidth=2.0, label='Mean')
-                                    ax_i.axhline(g_mu + k_std*g_sig_spc, color="#FF0000", linestyle="--", linewidth=1.8, label=f'Mill Range ({k_std}σ)')
-                                    ax_i.axhline(g_mu - k_std*g_sig_spc, color="#FF0000", linestyle="--", linewidth=1.8)
-                                    
-                                # 3. CHART PLOTTING
-                                fig_imr, ax_i = plt.subplots(figsize=(11, 5.5)) 
-                                ax_i.plot(np.arange(1, len(temp_spc_df)+1), temp_spc_df[data_col], color="#CFD8DC", linestyle="-", linewidth=1.5, zorder=1)
-                                
-                                if spc_groups:
-                                    g_mu = temp_spc_df[data_col].mean()
-                                    g_sig = temp_spc_df[data_col].std(ddof=1)
-                                    
-                                    # ĐÃ SỬA: Đổi màu marker của chart cho đồng bộ với thiết kế Deep Sky Blue
-                                    ax_i.scatter(np.arange(1, len(temp_spc_df)+1), temp_spc_df[data_col], color="#00BFFF", s=40, edgecolor="black", zorder=3)
-                                    
-                                    ax_i.axhline(g_mu, color="#0055FF", linestyle="-", linewidth=2.0, label='Mean')
-                                    ax_i.axhline(g_mu + k_std*g_sig, color="#FF0000", linestyle="--", linewidth=1.8, label=f'Mill Range ({k_std}σ)')
-                                    ax_i.axhline(g_mu - k_std*g_sig, color="#FF0000", linestyle="--", linewidth=1.8)
+                                    # Vẽ giới hạn biểu đồ dựa trên số K người dùng nhập
+                                    ax_i.axhline(g_mu + user_k_std*g_sig_spc, color="#FF0000", linestyle="--", linewidth=1.8, label=f'Upper Limit ({user_k_std}σ)')
+                                    ax_i.axhline(g_mu - user_k_std*g_sig_spc, color="#FF0000", linestyle="--", linewidth=1.8, label=f'Lower Limit ({user_k_std}σ)')
                                 
                                 ax_i.set_xlabel("Coil Sequence"); ax_i.set_ylabel(f"{selected_label} Value")
                                 ax_i.set_title(f"I-Chart: Dynamic Control Limits ({selected_label})", pad=20)
@@ -897,5 +889,3 @@ if uploaded_files:
                                 plt.close(fig_imr)
                                 
                             gc.collect()
-else:
-    st.info("👈 Please upload the production report to start.")
