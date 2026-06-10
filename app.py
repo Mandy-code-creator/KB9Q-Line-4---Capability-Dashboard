@@ -824,11 +824,18 @@ if uploaded_files:
                                     if len(g_data) > 1:
                                         g_n = len(g_data)
                                         g_mu = g_data.mean()
-                                        g_sig = g_data.std(ddof=1)
+                                        
+                                        # THUẬT TOÁN SPC CHUẨN: Ước lượng Sigma qua Moving Range
+                                        moving_range = g_data.diff().abs() # Khoảng cách giữa 2 điểm liên tiếp
+                                        mr_mean = moving_range.mean()      # Trung bình MR
+                                        g_sig_spc = mr_mean / 1.128        # Sigma chuẩn của biểu đồ I-MR
+                                        
+                                        # Giữ lại std() thông thường nếu bạn vẫn muốn hiển thị cho IQR
+                                        g_sig_overall = g_data.std(ddof=1) 
+                                        
                                         g_q1, g_q3 = g_data.quantile(0.25), g_data.quantile(0.75)
                                         g_iqr = g_q3 - g_q1
                                         
-                                        # ĐÃ SỬA: Sử dụng Median làm Target Goal cho phương pháp IQR
                                         target_goal = format_num(g_data.median())
                                         
                                         spc_stats.append({
@@ -836,9 +843,9 @@ if uploaded_files:
                                             "N": g_n,
                                             "Target Goal": target_goal,
                                             "Theo. Value": format_num(g_mu), 
-                                            "Sigma": format_num(g_sig),
-                                            f"Mill Range Upper ({k_std}σ)": format_num(g_mu + k_std*g_sig),
-                                            f"Mill Range Lower ({k_std}σ)": format_num(g_mu - k_std*g_sig),
+                                            "Sigma (MR)": format_num(g_sig_spc), # Hiện Sigma chuẩn SPC
+                                            f"Mill Range Upper ({k_std}σ)": format_num(g_mu + k_std*g_sig_spc),
+                                            f"Mill Range Lower ({k_std}σ)": format_num(g_mu - k_std*g_sig_spc),
                                             "IQR": format_num(g_iqr),
                                             "UCL (IQR)": format_num(g_q3 + k_iqr*g_iqr),
                                             "LCL (IQR)": format_num(g_q1 - k_iqr*g_iqr)
@@ -846,6 +853,23 @@ if uploaded_files:
                                         
                                 if spc_stats: 
                                     st.dataframe(pd.DataFrame(spc_stats), hide_index=True, use_container_width=True)
+                                    
+                                # 3. CHART PLOTTING
+                                fig_imr, ax_i = plt.subplots(figsize=(11, 5.5)) 
+                                ax_i.plot(np.arange(1, len(temp_spc_df)+1), temp_spc_df[data_col], color="#CFD8DC", linestyle="-", linewidth=1.5, zorder=1)
+                                
+                                if spc_groups:
+                                    g_mu = temp_spc_df[data_col].mean()
+                                    
+                                    # Áp dụng Sigma chuẩn để vẽ biểu đồ
+                                    moving_range = temp_spc_df[data_col].diff().abs()
+                                    g_sig_spc = moving_range.mean() / 1.128
+                                    
+                                    ax_i.scatter(np.arange(1, len(temp_spc_df)+1), temp_spc_df[data_col], color="#00BFFF", s=40, edgecolor="black", zorder=3)
+                                    
+                                    ax_i.axhline(g_mu, color="#0055FF", linestyle="-", linewidth=2.0, label='Mean')
+                                    ax_i.axhline(g_mu + k_std*g_sig_spc, color="#FF0000", linestyle="--", linewidth=1.8, label=f'Mill Range ({k_std}σ)')
+                                    ax_i.axhline(g_mu - k_std*g_sig_spc, color="#FF0000", linestyle="--", linewidth=1.8)
                                     
                                 # 3. CHART PLOTTING
                                 fig_imr, ax_i = plt.subplots(figsize=(11, 5.5)) 
