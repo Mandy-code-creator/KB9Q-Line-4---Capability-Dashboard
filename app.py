@@ -302,29 +302,48 @@ if uploaded_files:
                         with c2:
                             fig_comp, ax_comp = plt.subplots(figsize=(8, 4))
                             
+                            # 1. VẼ HISTOGRAM VÀ ĐƯỜNG CONG PHÂN BỐ
                             for label_name, vals, color in [
-                                (f"Galvanizing (n={len(vals_ma_full)})", vals_ma_full, THEME_COLORS[0]),
-                                (f"Coating (n={len(vals_son_full)})", vals_son_full, THEME_COLORS[1])
+                                (f"Galvanizing (n={len(vals_ma_full)})", vals_ma_full.dropna(), THEME_COLORS[0]),
+                                (f"Coating (n={len(vals_son_full)})", vals_son_full.dropna(), THEME_COLORS[1])
                             ]:
                                 if len(vals) > 1 and vals.std() > 0:
                                     mu_val = vals.mean()
                                     sigma_val = vals.std(ddof=1)
                                     
+                                    # Vẽ Histogram phân bố thực tế
+                                    ax_comp.hist(vals, bins=20, alpha=0.4, color=color, edgecolor="black", density=False)
+                                    
+                                    # Vẽ đường cong Normal Fit
                                     x_range = np.linspace(mu_val - 4*sigma_val, mu_val + 4*sigma_val, 500)
                                     bin_width = (vals.max() - vals.min()) / 20 if vals.max() > vals.min() else 1
                                     y_vals = norm.pdf(x_range, mu_val, sigma_val) * len(vals) * bin_width
                                     
                                     ax_comp.plot(x_range, y_vals, color=color, lw=2.5, label=label_name)
-                                    ax_comp.fill_between(x_range, y_vals, alpha=0.3, color=color)
                                     ax_comp.axvline(mu_val, color=color, linestyle='--', alpha=0.8) 
                             
+                            # 2. THÊM ĐƯỜNG GIỚI HẠN CỦA CHUYỀN COATING (SON LINE)
+                            if lsl_son is not None and lsl_son > 0:
+                                ax_comp.axvline(lsl_son, color="#FF0000", linestyle="--", linewidth=2.0, label="Coating Limit")
+                                ax_comp.text(lsl_son, ax_comp.get_ylim()[1]*0.85, f"Coating LSL\n{lsl_son}", color="#FF0000", ha='center', va='bottom', fontweight='bold', fontsize=8, bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="#FF0000", alpha=0.9))
+                                
+                            if usl_son is not None and usl_son > 0:
+                                ax_comp.axvline(usl_son, color="#FF0000", linestyle="--", linewidth=2.0, label="Coating Limit")
+                                ax_comp.text(usl_son, ax_comp.get_ylim()[1]*0.85, f"Coating USL\n{usl_son}", color="#FF0000", ha='center', va='bottom', fontweight='bold', fontsize=8, bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="#FF0000", alpha=0.9))
+
+                            # 3. ĐỊNH DẠNG VÀ TRÌNH BÀY BỐ CỤC
+                            ax_comp.set_ylim(0, ax_comp.get_ylim()[1] * 1.25) # Nới rộng không gian phía trên để không bị che chữ
                             ax_comp.set_ylabel("Coil Count")
                             ax_comp.set_xlabel(f"{selected_label} Value")
                             
                             short_title = "Global" if lsl_son is None and usl_son is None else format_spec(lsl_son if lsl_son is not None else -1, usl_son if usl_son is not None else -1)
                             ax_comp.set_title(f"Shift Dist. (Δ = {format_num(delta)}) | {short_title}", pad=10)
                             
-                            ax_comp.legend(loc="upper right", fontsize=9)
+                            # Gom các nhãn bị trùng lặp trong Legend
+                            handles, labels = ax_comp.get_legend_handles_labels()
+                            by_label = dict(zip(labels, handles))
+                            ax_comp.legend(by_label.values(), by_label.keys(), loc="upper right", fontsize=8)
+                            
                             apply_full_border(ax_comp)
                             plt.tight_layout()
                             st.pyplot(fig_comp)
