@@ -792,7 +792,10 @@ if uploaded_files:
                                 # 1. RE-FILTERING LOGIC (Ensure Slider is always active here)
                                 thick_col, thick_series = get_clean_thickness(df)
                                 temp_spc_df = df[[data_col]].copy()
+                                
+                                # Loại bỏ dữ liệu trống và giá trị <= 0
                                 temp_spc_df[data_col] = pd.to_numeric(temp_spc_df[data_col], errors='coerce')
+                                temp_spc_df = temp_spc_df[temp_spc_df[data_col] > 0]
                                 
                                 if thick_col:
                                     temp_spc_df['Thick_Num'] = thick_series
@@ -825,8 +828,8 @@ if uploaded_files:
                                         g_q1, g_q3 = g_data.quantile(0.25), g_data.quantile(0.75)
                                         g_iqr = g_q3 - g_q1
                                         
-                                        # Update target_goal logic here if pulling from a specific column
-                                        target_goal = "-" 
+                                        # ĐÃ SỬA: Sử dụng Median làm Target Goal cho phương pháp IQR
+                                        target_goal = format_num(g_data.median())
                                         
                                         spc_stats.append({
                                             "Category": g_name, 
@@ -843,6 +846,7 @@ if uploaded_files:
                                         
                                 if spc_stats: 
                                     st.dataframe(pd.DataFrame(spc_stats), hide_index=True, use_container_width=True)
+                                    
                                 # 3. CHART PLOTTING
                                 fig_imr, ax_i = plt.subplots(figsize=(11, 5.5)) 
                                 ax_i.plot(np.arange(1, len(temp_spc_df)+1), temp_spc_df[data_col], color="#CFD8DC", linestyle="-", linewidth=1.5, zorder=1)
@@ -850,7 +854,10 @@ if uploaded_files:
                                 if spc_groups:
                                     g_mu = temp_spc_df[data_col].mean()
                                     g_sig = temp_spc_df[data_col].std(ddof=1)
-                                    ax_i.scatter(np.arange(1, len(temp_spc_df)+1), temp_spc_df[data_col], color="#0055FF", s=40, edgecolor="black", zorder=3)
+                                    
+                                    # ĐÃ SỬA: Đổi màu marker của chart cho đồng bộ với thiết kế Deep Sky Blue
+                                    ax_i.scatter(np.arange(1, len(temp_spc_df)+1), temp_spc_df[data_col], color="#00BFFF", s=40, edgecolor="black", zorder=3)
+                                    
                                     ax_i.axhline(g_mu, color="#0055FF", linestyle="-", linewidth=2.0, label='Mean')
                                     ax_i.axhline(g_mu + k_std*g_sig, color="#FF0000", linestyle="--", linewidth=1.8, label=f'Mill Range ({k_std}σ)')
                                     ax_i.axhline(g_mu - k_std*g_sig, color="#FF0000", linestyle="--", linewidth=1.8)
