@@ -536,6 +536,12 @@ if uploaded_files:
                             # SUB-VIEW: PROCESS ANALYTICS (TREND & DIST)
                             # ---------------------------------------------------------
                             if view_mode == "Process Analytics":
+                                # 1. ĐÃ SỬA: Ép kiểu và biến các giá trị <= 0 thành NaN để loại bỏ hoàn toàn khỏi biểu đồ
+                                clean_plot_data = pd.to_numeric(plot_data, errors='coerce')
+                                clean_plot_data = clean_plot_data.where(clean_plot_data > 0)
+                                calc_data = clean_plot_data.dropna()
+                                valid_n = len(calc_data)
+
                                 int_lsl_series = get_limit_series(df, zh_key, "min", "管制", len(df)).loc[temp_df[data_col].notna()].reset_index(drop=True)
                                 int_usl_series = get_limit_series(df, zh_key, "max", "管制", len(df)).loc[temp_df[data_col].notna()].reset_index(drop=True)
                                 cust_lsl_series = get_limit_series(df, zh_key, "min", "客戶要求", len(df)).loc[temp_df[data_col].notna()].reset_index(drop=True)
@@ -550,10 +556,6 @@ if uploaded_files:
                                 
                                 groups = temp_plot_df.groupby(['LSL_temp', 'USL_temp'])
                                 is_multi_group = len(groups) > 1
-                                
-                                # ĐÃ SỬA: Loại bỏ NA và chuỗi trống trước khi tính Mean/Sigma
-                                calc_data = pd.to_numeric(plot_data, errors='coerce').dropna()
-                                valid_n = len(calc_data)
                                 
                                 mu = calc_data.mean()
                                 sigma_fixed = calc_data.std(ddof=1)
@@ -605,8 +607,9 @@ if uploaded_files:
                                         mask = temp_plot_df.index.isin(group.index)
                                         spec_txt = format_spec(lsl, usl)
                                         
-                                        # Tính trung bình dựa trên dữ liệu hợp lệ của từng group
+                                        # Tính mean chỉ dựa trên dữ liệu > 0
                                         group_clean = pd.to_numeric(group[data_col], errors='coerce').dropna()
+                                        group_clean = group_clean[group_clean > 0]
                                         group_mean = group_clean.mean() if len(group_clean) > 0 else safe_mu
                                         
                                         ax_t.axhline(group_mean, color=c_mean, linestyle="-", linewidth=2.0, alpha=0.7, label="Mean Value" if color_idx==0 else None)
@@ -626,18 +629,18 @@ if uploaded_files:
                                             ax_t.axhline(ucl_3s, color=c_limit, linestyle="-.", linewidth=2.0, alpha=1.0)
                                             add_to_label(ucl_3s, "+3 Sigma", c_limit)
                                             
-                                        ax_t.scatter(x_coords[mask], plot_data[mask], color=c, s=40, edgecolor="black", linewidth=1.0, zorder=4, label=f"Data ({spec_txt})")
+                                        # Dùng clean_plot_data để vẽ scatter (những điểm = 0 sẽ không hiện ra)
+                                        ax_t.scatter(x_coords[mask], clean_plot_data[mask], color=c, s=40, edgecolor="black", linewidth=1.0, zorder=4, label=f"Data ({spec_txt})")
                                         color_idx += 1
 
-                                    mask_out = (pd.to_numeric(plot_data, errors='coerce') < lower_bound) | (pd.to_numeric(plot_data, errors='coerce') > upper_bound)
+                                    mask_out = (clean_plot_data < lower_bound) | (clean_plot_data > upper_bound)
                                     if mask_out.any():
-                                        ax_t.scatter(x_coords[mask_out], plot_data[mask_out], color="#FF0000", s=60, edgecolor="#800000", linewidth=1.5, zorder=6, label="Out of Limit")
+                                        ax_t.scatter(x_coords[mask_out], clean_plot_data[mask_out], color="#FF0000", s=60, edgecolor="#800000", linewidth=1.5, zorder=6, label="Out of Limit")
 
                                     ymin, ymax = calc_data.min(), calc_data.max()
                                     if pd.notna(ymin) and pd.notna(ymax):
                                         for val in label_dict.keys():
                                             ymin, ymax = min(ymin, val), max(ymax, val)
-                                                
                                         y_range = ymax - ymin if ymax > ymin else 10
                                         ax_t.set_ylim(ymin - y_range*0.12, ymax + y_range*0.12)
                                     ax_t.set_xlim(0, n_total * 1.18)
@@ -677,10 +680,11 @@ if uploaded_files:
                                     hist_data, hist_labels = [], []
                                     color_idx = 0
                                     for (lsl, usl), group in groups:
-                                        # ĐÃ SỬA: Loại bỏ NA/Empty trước khi đưa vào biểu đồ Histogram
-                                        clean_group = pd.to_numeric(group[data_col], errors='coerce').dropna().values
+                                        # Lọc dữ liệu > 0 cho từng group
+                                        clean_group = pd.to_numeric(group[data_col], errors='coerce').dropna()
+                                        clean_group = clean_group[clean_group > 0]
                                         if len(clean_group) > 0:
-                                            hist_data.append(clean_group)
+                                            hist_data.append(clean_group.values)
                                             hist_labels.append(f"Data ({format_spec(lsl, usl)})")
                                             color_idx += 1
                                         
@@ -718,8 +722,8 @@ if uploaded_files:
                                         c_mean = c if is_multi_group else "#0055FF"
                                         c_limit = c if is_multi_group else "#FF0000"
                                         
-                                        # Lấy mean hợp lệ
                                         group_clean = pd.to_numeric(group[data_col], errors='coerce').dropna()
+                                        group_clean = group_clean[group_clean > 0]
                                         group_mean = group_clean.mean() if len(group_clean) > 0 else safe_mu
                                         
                                         register_vline(group_mean, c_mean, "-", "Mean Value" if color_idx==0 else None)
@@ -738,7 +742,8 @@ if uploaded_files:
 
                                     lines_to_draw.sort(key=lambda x: x['val'])
                                     if len(calc_data) > 0:
-                                        min_dist = (x_max_fit - x_min_fit) * 0.09  
+                                        # ĐÃ SỬA: Tăng min_dist lên 0.12 để chống ghi đè nhãn
+                                        min_dist = (x_max_fit - x_min_fit) * 0.12 
                                     else:
                                         min_dist = 1
                                         
@@ -762,6 +767,7 @@ if uploaded_files:
                                         bbox_props = dict(boxstyle="round,pad=0.2", fc="white", ec=c, alpha=0.9, lw=1.5)
                                         ax_d.text(val, y_pos, f"{val:.1f}", color=c, ha='center', va='bottom', transform=trans, fontweight='bold', fontsize=10, bbox=bbox_props)
                                     
+                                    # ĐÃ SỬA: Số N giờ chỉ đếm số cuộn > 0 hợp lệ
                                     ax_d.set_title(f"{selected_label} Distribution (N={valid_n})", pad=35, fontweight="bold")  
                                     
                                     handles, labels = ax_d.get_legend_handles_labels()
