@@ -348,6 +348,53 @@ if uploaded_files:
                             plt.tight_layout()
                             st.pyplot(fig_comp)
                             
+                            # ==========================================================
+                            # 4. TẠO VÀ XUẤT BÁO CÁO WORD (ĐÃ THÊM MỚI VÀO ĐÂY)
+                            # ==========================================================
+                            # Lưu biểu đồ đang vẽ vào bộ nhớ tạm (buffer)
+                            img_buffer = io.BytesIO()
+                            fig_comp.savefig(img_buffer, format='png', dpi=300, bbox_inches='tight')
+                            img_buffer.seek(0)
+                            
+                            # Khởi tạo file Word
+                            doc = Document()
+                            doc.add_heading('Báo Cáo Phân Tích: Cross-Line Comparison', 0)
+                            doc.add_heading(f'Thông số: {selected_label}', level=1)
+                            
+                            # Điền các số liệu thống kê hiện có
+                            p = doc.add_paragraph()
+                            p.add_run(f"Nhóm phân tích: {group_name}\n").bold = True
+                            p.add_run(f"Giá trị trung bình Galvanizing: {format_num(mean_ma)}\n")
+                            p.add_run(f"Giá trị trung bình Coating: {format_num(mean_son)}\n")
+                            p.add_run(f"Độ lệch (Shift Δ): {format_num(delta)}\n")
+                            
+                            if pd.notnull(t_stat):
+                                p.add_run(f"\nKiểm định 2-Sample T-Test:\n").bold = True
+                                p.add_run(f"T-Statistic: {format_num(t_stat)} | P-Value: {p_val:.4f}\n")
+                                p.add_run(f"Ý nghĩa thống kê: {is_significant}")
+
+                            # Chèn hình ảnh biểu đồ vào Word
+                            doc.add_heading('Biểu đồ phân bố', level=2)
+                            doc.add_picture(img_buffer, width=Inches(6.0))
+                            
+                            # Lưu Word vào bộ nhớ tạm để tải xuống
+                            word_buffer = io.BytesIO()
+                            doc.save(word_buffer)
+                            word_buffer.seek(0)
+                            
+                            # Tạo nút Download ngay dưới biểu đồ
+                            st.markdown("<br>", unsafe_allow_html=True)
+                            safe_label = str(selected_label).replace(" ", "_").replace("/", "_")
+                            safe_group = str(group_name).replace(" ", "_").replace("<=", "lte").replace(">", "gt")
+                            st.download_button(
+                                label="📄 Tải Báo Cáo Word (Có biểu đồ)",
+                                data=word_buffer,
+                                file_name=f"Report_{safe_label}_{safe_group}.docx",
+                                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                key=f"dl_word_{safe_label}_{safe_group}"
+                            )
+                            # ==========================================================
+
                         plt.close(fig_comp)
                         gc.collect()
                         
